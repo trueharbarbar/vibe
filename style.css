@@ -1,7 +1,6 @@
-/* --- Общие стили --- */
 body {
     margin: 0;
-    padding-bottom: 80px; /* Оставляем место для липкого футера на мобильных */
+    padding-bottom: 80px;
     font-family: 'Roboto', sans-serif;
     background-color: #f0f2f5;
     color: #333;
@@ -13,7 +12,6 @@ body {
     padding: 20px;
 }
 
-/* --- Стили для шапки (Hero Section) --- */
 .hero-section {
     background-size: cover;
     background-position: center;
@@ -60,9 +58,8 @@ body {
     font-weight: 500;
 }
 
-/* --- Кнопка "Установить" --- */
 .download-button {
-    background-color: var(--primary-color, #4CAF50); /* Цвет по умолчанию, если переменная не загрузится */
+    background-color: var(--primary-color, #4CAF50);
     color: #fff;
     text-decoration: none;
     padding: 15px 30px;
@@ -84,7 +81,6 @@ body {
     background-color: var(--secondary-color, #fbc02d);
 }
 
-/* --- Секции в main --- */
 section {
     background: #fff;
     margin-bottom: 20px;
@@ -101,10 +97,9 @@ h2 {
     color: var(--primary-color, #333);
 }
 
-/* --- Галерея медиа (видео и скриншоты) --- */
 .video-container {
     position: relative;
-    padding-bottom: 56.25%; /* Соотношение сторон 16:9 */
+    padding-bottom: 56.25%;
     height: 0;
     overflow: hidden;
     margin-bottom: 20px;
@@ -132,19 +127,16 @@ h2 {
     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
 }
 
-/* --- Секция описания --- */
 .description-content {
-    white-space: pre-wrap; /* Сохраняет абзацы и переносы строк из Google Play */
+    white-space: pre-wrap;
     line-height: 1.7;
     font-size: 1.1em;
 }
 
-/* --- Липкий футер для мобильных --- */
 .sticky-footer {
-    display: none; /* Скрыт по умолчанию */
+    display: none;
 }
 
-/* --- Адаптивность --- */
 @media (max-width: 768px) {
     .hero-section .container {
         flex-direction: column;
@@ -160,7 +152,7 @@ h2 {
     }
 
     .hero-section .download-button {
-        display: none; /* Скрываем кнопку в шапке на мобильных */
+        display: none;
     }
 
     .screenshots-gallery img {
