@@ -1,4 +1,5 @@
 Flask==2.3.3
+Flask-Cors==4.0.0
 gunicorn==21.2.0
 google-play-scraper==1.2.4
 Pillow==10.0.0
