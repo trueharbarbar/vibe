@@ -144,7 +144,11 @@ def get_domain_from_url(url):
     """Извлечение домена из URL"""
     try:
         parsed = urlparse(url)
-        return parsed.netloc or 'localhost'
+        # Убираем порт из домена если есть
+        domain = parsed.netloc
+        if ':' in domain:
+            domain = domain.split(':')[0]
+        return domain or 'localhost'
     except:
         return 'localhost'
 
@@ -246,7 +250,7 @@ def process_app_data(package_name, language):
         app_images_dir = os.path.join(IMAGES_DIR, package_name)
         os.makedirs(app_images_dir, exist_ok=True)
         
-        # Обрабатываем изображения
+        # Обрабатываем изображения с правильными путями для автономного лендинга
         processed_data = {
             'title': app_data.get('title', 'Unknown App'),
             'developer': app_data.get('developer', 'Unknown Developer'),
@@ -266,14 +270,14 @@ def process_app_data(package_name, language):
         if app_data.get('icon'):
             icon_path = os.path.join(app_images_dir, 'icon.png')
             if download_image(app_data['icon'], icon_path):
-                processed_data['icon'] = f"images/icon.png"  # Относительный путь
+                processed_data['icon'] = f"icon.png"  # Относительный путь от корня лендинга
                 processed_data['colors'] = extract_dominant_colors(icon_path)
         
         # Скачиваем обложку
         if app_data.get('headerImage'):
             cover_path = os.path.join(app_images_dir, 'cover.jpg')
             if download_image(app_data['headerImage'], cover_path):
-                processed_data['cover'] = f"images/cover.jpg"  # Относительный путь
+                processed_data['cover'] = f"cover.jpg"  # Относительный путь от корня лендинга
         
         # Скачиваем скриншоты
         screenshots = []
@@ -281,7 +285,7 @@ def process_app_data(package_name, language):
             for i, screenshot_url in enumerate(app_data['screenshots'][:6]):
                 screenshot_path = os.path.join(app_images_dir, f'screenshot_{i}.jpg')
                 if download_image(screenshot_url, screenshot_path):
-                    screenshots.append(f"images/screenshot_{i}.jpg")  # Относительный путь
+                    screenshots.append(f"screenshot_{i}.jpg")  # Относительный путь от корня лендинга
         processed_data['screenshots'] = screenshots
         
         # Обрабатываем видео
@@ -295,7 +299,7 @@ def process_app_data(package_name, language):
         logger.error(f"Failed to process app data: {str(e)}\n{traceback.format_exc()}")
         return None
 
-def generate_html(app_data):
+def generate_html(app_data, landing_id):
     """Генерация HTML страницы лендинга с рандомизацией"""
     try:
         # Генерируем параметры рандомизации
@@ -304,8 +308,17 @@ def generate_html(app_data):
         # Получаем домен из BASE_URL
         domain = get_domain_from_url(BASE_URL)
         
-        # Добавляем domain в данные
+        # Добавляем domain и landing_id в данные
         app_data['domain'] = domain
+        app_data['landing_id'] = landing_id
+        
+        # Обновляем пути к изображениям для правильной работы
+        if app_data.get('icon'):
+            app_data['icon'] = f"/landing/{landing_id}/{app_data['icon']}"
+        if app_data.get('cover'):
+            app_data['cover'] = f"/landing/{landing_id}/{app_data['cover']}"
+        if app_data.get('screenshots'):
+            app_data['screenshots'] = [f"/landing/{landing_id}/{s}" for s in app_data['screenshots']]
         
         # Объединяем все параметры
         template_data = {**app_data, **r}
@@ -802,8 +815,8 @@ def generate_html(app_data):
     <footer>
         <div class="footer-content">
             <div class="footer-links">
-                <a href="privacy.html">Privacy Policy</a>
-                <a href="terms.html">Terms of Service</a>
+                <a href="/landing/{{ landing_id }}/privacy.html">Privacy Policy</a>
+                <a href="/landing/{{ landing_id }}/terms.html">Terms of Service</a>
                 <a href="mailto:mail@{{ domain }}">Contact Us</a>
             </div>
             <div class="footer-copyright">
@@ -983,21 +996,20 @@ def generate_landing():
         
         # Создаем директорию для этого лендинга (автономная структура)
         landing_dir = os.path.join(LANDINGS_DIR, landing_id)
-        landing_images_dir = os.path.join(landing_dir, 'images')
-        os.makedirs(landing_images_dir, exist_ok=True)
+        os.makedirs(landing_dir, exist_ok=True)
         
-        # Копируем изображения в директорию лендинга
+        # Копируем изображения напрямую в директорию лендинга (не в подпапку images)
         source_images_dir = os.path.join(IMAGES_DIR, package_name)
         if os.path.exists(source_images_dir):
             for filename in os.listdir(source_images_dir):
                 src = os.path.join(source_images_dir, filename)
-                dst = os.path.join(landing_images_dir, filename)
+                dst = os.path.join(landing_dir, filename)  # Копируем в корень лендинга
                 if os.path.isfile(src):
                     shutil.copy2(src, dst)
                     logger.info(f"Copied image {filename} to landing directory")
         
-        # Генерируем HTML
-        html_content = generate_html(app_data)
+        # Генерируем HTML с правильным landing_id
+        html_content = generate_html(app_data, landing_id)
         
         # Сохраняем HTML файл
         landing_html_path = os.path.join(landing_dir, 'index.html')
@@ -1051,11 +1063,11 @@ def generate_landing():
 
 @app.route('/landing/<path:filename>')
 def serve_landing(filename):
-    """Отдача готового лендинга"""
+    """Отдача готового лендинга и его ресурсов"""
     try:
-        # Поддержка старого формата (прямые файлы)
+        # Если это HTML файл
         if filename.endswith('.html'):
-            # Проверяем прямой файл
+            # Проверяем прямой файл (старый формат)
             direct_path = os.path.join(LANDINGS_DIR, filename)
             if os.path.exists(direct_path):
                 return send_from_directory(LANDINGS_DIR, filename)
@@ -1063,26 +1075,64 @@ def serve_landing(filename):
             # Проверяем в директории (новый формат)
             landing_id = filename.replace('.html', '')
             landing_dir = os.path.join(LANDINGS_DIR, landing_id)
-            if os.path.exists(landing_dir):
+            index_path = os.path.join(landing_dir, 'index.html')
+            if os.path.exists(index_path):
                 return send_from_directory(landing_dir, 'index.html')
         
-        # Для файлов без расширения - ищем директорию
-        landing_dir = os.path.join(LANDINGS_DIR, filename)
-        if os.path.exists(landing_dir):
-            return send_from_directory(landing_dir, 'index.html')
+        # Проверяем, есть ли слеш в пути (запрос к ресурсу внутри лендинга)
+        if '/' in filename:
+            parts = filename.split('/', 1)
+            landing_id = parts[0]
+            resource_path = parts[1]
             
+            # Ищем ресурс в директории лендинга
+            landing_dir = os.path.join(LANDINGS_DIR, landing_id)
+            resource_full_path = os.path.join(landing_dir, resource_path)
+            
+            if os.path.exists(resource_full_path):
+                # Определяем директорию и имя файла
+                resource_dir = os.path.dirname(resource_full_path)
+                resource_name = os.path.basename(resource_full_path)
+                return send_from_directory(resource_dir, resource_name)
+        
+        # Для правовых документов в корне лендинга
+        if filename in ['privacy.html', 'terms.html']:
+            # Попробуем найти в общей директории legal
+            legal_path = os.path.join(LEGAL_DIR, filename)
+            if os.path.exists(legal_path):
+                return send_from_directory(LEGAL_DIR, filename)
+        
         abort(404)
     except Exception as e:
-        logger.error(f"Error serving landing {filename}: {str(e)}")
+        logger.error(f"Error serving landing resource {filename}: {str(e)}")
         abort(404)
 
 @app.route('/landing/<landing_id>/<path:filepath>')
 def serve_landing_resource(landing_id, filepath):
     """Отдача ресурсов лендинга (изображения, css, js)"""
     try:
+        # Убираем .html из landing_id если есть
+        if landing_id.endswith('.html'):
+            landing_id = landing_id.replace('.html', '')
+        
         landing_dir = os.path.join(LANDINGS_DIR, landing_id)
-        return send_from_directory(landing_dir, filepath)
-    except:
+        
+        # Если путь содержит images/, ищем в корне директории
+        if filepath.startswith('images/'):
+            # Убираем images/ из пути
+            actual_file = filepath.replace('images/', '')
+            file_path = os.path.join(landing_dir, actual_file)
+        else:
+            file_path = os.path.join(landing_dir, filepath)
+        
+        if os.path.exists(file_path):
+            directory = os.path.dirname(file_path)
+            filename = os.path.basename(file_path)
+            return send_from_directory(directory, filename)
+        
+        abort(404)
+    except Exception as e:
+        logger.error(f"Error serving resource {landing_id}/{filepath}: {str(e)}")
         abort(404)
 
 @app.route('/static/images/<path:filepath>')
