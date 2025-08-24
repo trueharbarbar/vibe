@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Конфигурация
-BASE_URL = os.environ.get('BASE_URL', 'http://localhost:8080')
+BASE_URL = os.environ.get('BASE_URL', 'https://vibe.clickapi.org')  # Изменен дефолтный URL
 STATIC_DIR = '/app/static'
 LANDINGS_DIR = os.path.join(STATIC_DIR, 'landings')
 IMAGES_DIR = os.path.join(STATIC_DIR, 'images')
@@ -38,6 +38,10 @@ LEGAL_DIR = os.path.join(STATIC_DIR, 'legal')
 # Создаем необходимые директории
 for directory in [LANDINGS_DIR, IMAGES_DIR, ARCHIVES_DIR, LEGAL_DIR]:
     os.makedirs(directory, exist_ok=True)
+
+# Логируем текущую конфигурацию
+logger.info(f"Starting with BASE_URL: {BASE_URL}")
+logger.info(f"Domain extracted: {get_domain_from_url(BASE_URL)}")
 
 def format_installs(installs):
     """Форматирование числа установок в человекочитаемый вид"""
@@ -144,13 +148,19 @@ def get_domain_from_url(url):
     """Извлечение домена из URL"""
     try:
         parsed = urlparse(url)
-        # Убираем порт из домена если есть
         domain = parsed.netloc
+        
+        # Убираем порт из домена если есть
         if ':' in domain:
             domain = domain.split(':')[0]
-        return domain or 'localhost'
+        
+        # Если домен localhost, возвращаем дефолтный
+        if domain == 'localhost' or not domain:
+            return 'vibe.clickapi.org'
+            
+        return domain
     except:
-        return 'localhost'
+        return 'vibe.clickapi.org'
 
 def generate_randomization_params():
     """Генерация параметров для рандомизации дизайна"""
@@ -1163,7 +1173,29 @@ def download_archive(filename):
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
-    return jsonify({'status': 'healthy'}), 200
+    return jsonify({
+        'status': 'healthy',
+        'base_url': BASE_URL,
+        'domain': get_domain_from_url(BASE_URL),
+        'environment': {
+            'BASE_URL': os.environ.get('BASE_URL', 'not set')
+        }
+    }), 200
+
+@app.route('/config', methods=['GET'])
+def get_config():
+    """Get current configuration"""
+    return jsonify({
+        'base_url': BASE_URL,
+        'domain': get_domain_from_url(BASE_URL),
+        'env_base_url': os.environ.get('BASE_URL', 'not set'),
+        'directories': {
+            'static': STATIC_DIR,
+            'landings': LANDINGS_DIR,
+            'images': IMAGES_DIR,
+            'archives': ARCHIVES_DIR
+        }
+    }), 200
 
 @app.errorhandler(404)
 def not_found(e):
