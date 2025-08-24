@@ -1,0 +1,5 @@
+Flask
+google-play-scraper
+colorgram.py
+Pillow
+requests

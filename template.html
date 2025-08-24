@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+
+    <style>
+        :root {
+            --primary-color: {{ primary_color }};
+            --secondary-color: {{ secondary_color }};
+        }
+    </style>
+</head>
+<body>
+
+    <header class="hero-section" style="background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('{{ cover_image }}');">
+        <div class="container">
+            <div class="app-info">
+                <img src="{{ icon_url }}" alt="{{ title }} icon" class="app-icon">
+                <div class="app-text">
+                    <h1>{{ title }}</h1>
+                    <p class="developer">{{ developer }}</p>
+                    <div class="app-meta">
+                        <span>{{ rating }} ★</span>
+                        <span>{{ downloads }} скачиваний</span>
+                    </div>
+                </div>
+            </div>
+            <a href="{{ store_url }}" class="download-button">Установить</a>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="media-section">
+            <h2>Видео и скриншоты</h2>
+            {% if video_url %}
+            <div class="video-container">
+                <iframe src="{{ video_url }}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+            </div>
+            {% endif %}
+            
+            <div class="screenshots-gallery">
+                {% for screenshot in screenshots %}
+                <img src="{{ screenshot }}" alt="App screenshot">
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="description-section">
+            <h2>Описание</h2>
+            <div class="description-content">
+                {{ description|safe }}
+            </div>
+        </section>
+    </main>
+
+    <footer class="sticky-footer">
+        <a href="{{ store_url }}" class="download-button">Установить из Google Play</a>
+    </footer>
+
+</body>
+</html>
