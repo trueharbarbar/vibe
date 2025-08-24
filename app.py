@@ -39,9 +39,8 @@ LEGAL_DIR = os.path.join(STATIC_DIR, 'legal')
 for directory in [LANDINGS_DIR, IMAGES_DIR, ARCHIVES_DIR, LEGAL_DIR]:
     os.makedirs(directory, exist_ok=True)
 
-# Логируем текущую конфигурацию
+# Логируем текущую конфигурацию (убрано использование функции до её определения)
 logger.info(f"Starting with BASE_URL: {BASE_URL}")
-logger.info(f"Domain extracted: {get_domain_from_url(BASE_URL)}")
 
 def format_installs(installs):
     """Форматирование числа установок в человекочитаемый вид"""
@@ -150,17 +149,26 @@ def get_domain_from_url(url):
         parsed = urlparse(url)
         domain = parsed.netloc
         
-        # Убираем порт из домена если есть
+        # Убираем порт из домена если есть (например, localhost:8080 -> localhost)
         if ':' in domain:
             domain = domain.split(':')[0]
         
-        # Если домен localhost, возвращаем дефолтный
-        if domain == 'localhost' or not domain:
-            return 'vibe.clickapi.org'
+        # Убираем www. если есть (например, www.example.com -> example.com)
+        if domain.startswith('www.'):
+            domain = domain[4:]
+        
+        # Если домен пустой или localhost, возвращаем дефолтный
+        if not domain or domain == 'localhost':
+            # Пытаемся извлечь из дефолтного BASE_URL
+            default_parsed = urlparse('https://vibe.clickapi.org')
+            domain = default_parsed.netloc
+            if domain.startswith('www.'):
+                domain = domain[4:]
             
         return domain
-    except:
-        return 'vibe.clickapi.org'
+    except Exception as e:
+        logger.error(f"Error extracting domain: {e}")
+        return 'example.com'
 
 def generate_randomization_params():
     """Генерация параметров для рандомизации дизайна"""
@@ -310,16 +318,12 @@ def process_app_data(package_name, language):
         return None
 
 def generate_html(app_data, landing_id):
-    """Генерация HTML страницы лендинга с рандомизацией"""
+    """Генерация PHP страницы лендинга с динамическим определением домена"""
     try:
         # Генерируем параметры рандомизации
         r = generate_randomization_params()
         
-        # Получаем домен из BASE_URL
-        domain = get_domain_from_url(BASE_URL)
-        
-        # Добавляем domain и landing_id в данные
-        app_data['domain'] = domain
+        # НЕ извлекаем домен здесь - он будет определяться динамически в PHP
         app_data['landing_id'] = landing_id
         
         # Обновляем пути к изображениям для правильной работы
@@ -333,7 +337,549 @@ def generate_html(app_data, landing_id):
         # Объединяем все параметры
         template_data = {**app_data, **r}
         
-        template = Template('''<!DOCTYPE html>
+        # PHP код для динамического определения домена
+        php_header = '''<?php
+// Динамическое определение домена
+$protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http";
+$domain = $_SERVER['HTTP_HOST'];
+
+// Убираем www. если есть
+if (strpos($domain, 'www.') === 0) {
+    $domain = substr($domain, 4);
+}
+
+// Убираем порт если есть
+if (strpos($domain, ':') !== false) {
+    $domain = explode(':', $domain)[0];
+}
+
+// Если это localhost, используем дефолтный домен
+if ($domain == 'localhost' || $domain == '127.0.0.1') {
+    $domain = 'example.com';
+}
+
+// Формируем полный URL
+$base_url = $protocol . '://' . $_SERVER['HTTP_HOST'];
+?>'''
+        
+        template = Template(php_header + '''
+<!DOCTYPE html>
+<html lang="{{ language }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - Download Mobile App</title>
+    <style>
+        :root {
+            --primary-color: {{ colors[0] }};
+            --secondary-color: {{ colors[1] }};
+            --accent-color: {{ colors[2] }};
+            --shadow-intensity: {{ shadow_intensity }};
+            --animation-speed: {{ animation_speed }}s;
+            --border-radius: {{ border_radius }}px;
+            --section-spacing: {{ section_spacing }}px;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: {{ font_family }};
+            line-height: 1.6;
+            color: {% if dark_mode %}#e0e0e0{% else %}#333{% endif %};
+            {% if use_gradient_bg %}
+            background: linear-gradient({{ gradient_angle }}deg, 
+                {{ colors[0] }}22 {{ gradient_stops.split(',')[0] }}, 
+                {{ colors[1] }}22 {{ gradient_stops.split(',')[-1] }});
+            {% else %}
+            background: {% if dark_mode %}#121212{% else %}#f5f7fa{% endif %};
+            {% endif %}
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: {{ container_padding }}px;
+        }
+        
+        .hero {
+            background: {% if dark_mode %}#1e1e1e{% else %}white{% endif %};
+            border-radius: var(--border-radius);
+            padding: {{ section_spacing }}px;
+            margin-bottom: var(--section-spacing);
+            box-shadow: 0 10px 40px rgba(0,0,0,calc(var(--shadow-intensity)));
+            {% if layout_style == 'modern' %}
+            border: 1px solid {{ colors[0] }}22;
+            {% elif layout_style == 'bold' %}
+            border-left: 5px solid var(--primary-color);
+            {% endif %}
+        }
+        
+        .app-header {
+            display: flex;
+            align-items: center;
+            gap: 30px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            {% if hero_layout == 'center-aligned' %}
+            justify-content: center;
+            text-align: center;
+            {% elif hero_layout == 'right-aligned' %}
+            flex-direction: row-reverse;
+            text-align: right;
+            {% endif %}
+        }
+        
+        .app-icon {
+            width: 120px;
+            height: 120px;
+            border-radius: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,calc(var(--shadow-intensity) * 1.5));
+            transition: transform var(--animation-speed);
+        }
+        
+        .app-icon:hover {
+            transform: scale(1.05);
+        }
+        
+        .app-info h1 {
+            font-size: {{ title_size }}em;
+            font-weight: {{ heading_weight }};
+            margin-bottom: 10px;
+            color: var(--primary-color);
+            {% if layout_style == 'elegant' %}
+            letter-spacing: -0.02em;
+            {% endif %}
+        }
+        
+        .developer {
+            color: {% if dark_mode %}#999{% else %}#666{% endif %};
+            font-size: 1.1em;
+            margin-bottom: 15px;
+        }
+        
+        {% if stats_style == 'cards' %}
+        .stats {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .stat {
+            background: {{ colors[0] }}11;
+            padding: 12px 20px;
+            border-radius: 12px;
+            border: 1px solid {{ colors[0] }}33;
+        }
+        {% elif stats_style == 'badges' %}
+        .stats {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .stat {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: linear-gradient(135deg, {{ colors[0] }}22, {{ colors[1] }}22);
+            padding: 8px 16px;
+            border-radius: 20px;
+        }
+        {% else %}
+        .stats {
+            display: flex;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+        
+        .stat {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        {% endif %}
+        
+        .stat-label {
+            color: {% if dark_mode %}#aaa{% else %}#999{% endif %};
+            font-size: 0.9em;
+        }
+        
+        .stat-value {
+            font-weight: bold;
+            color: var(--primary-color);
+            font-size: 1.2em;
+        }
+        
+        {% if button_style == 'gradient' %}
+        .download-button {
+            display: inline-block;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            padding: 15px 40px;
+            border-radius: {{ button_radius }};
+            text-decoration: none;
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-top: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: all var(--animation-speed);
+        }
+        {% elif button_style == 'outline-glow' %}
+        .download-button {
+            display: inline-block;
+            background: transparent;
+            color: var(--primary-color);
+            border: 2px solid var(--primary-color);
+            padding: 15px 40px;
+            border-radius: {{ button_radius }};
+            text-decoration: none;
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-top: 30px;
+            transition: all var(--animation-speed);
+            position: relative;
+        }
+        
+        .download-button:hover {
+            background: var(--primary-color);
+            color: white;
+            box-shadow: 0 0 30px var(--primary-color);
+        }
+        {% else %}
+        .download-button {
+            display: inline-block;
+            background: var(--primary-color);
+            color: white;
+            padding: 15px 40px;
+            border-radius: {{ button_radius }};
+            text-decoration: none;
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-top: 30px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.15);
+            transition: all var(--animation-speed);
+        }
+        {% endif %}
+        
+        .download-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.25);
+        }
+        
+        {% if description_style == 'card' %}
+        .description {
+            background: {% if dark_mode %}#1e1e1e{% else %}white{% endif %};
+            padding: 30px;
+            border-radius: var(--border-radius);
+            margin-bottom: var(--section-spacing);
+            box-shadow: 0 5px 20px rgba(0,0,0,calc(var(--shadow-intensity)));
+        }
+        {% elif description_style == 'bordered' %}
+        .description {
+            background: {% if dark_mode %}#1a1a1a{% else %}#fafafa{% endif %};
+            padding: 30px;
+            border-radius: var(--border-radius);
+            margin-bottom: var(--section-spacing);
+            border: 2px solid {{ colors[0] }}33;
+        }
+        {% else %}
+        .description {
+            background: {{ colors[0] }}08;
+            padding: 30px;
+            border-radius: var(--border-radius);
+            margin-bottom: var(--section-spacing);
+        }
+        {% endif %}
+        
+        .description h2 {
+            color: var(--primary-color);
+            margin-bottom: 15px;
+            font-weight: {{ heading_weight }};
+        }
+        
+        .description-text {
+            color: {% if dark_mode %}#ccc{% else %}#555{% endif %};
+            line-height: 1.8;
+            white-space: pre-wrap;
+        }
+        
+        .video-section {
+            background: {% if dark_mode %}#1e1e1e{% else %}white{% endif %};
+            padding: 30px;
+            border-radius: var(--border-radius);
+            margin-bottom: var(--section-spacing);
+            box-shadow: 0 10px 30px rgba(0,0,0,calc(var(--shadow-intensity)));
+        }
+        
+        .video-section h2 {
+            color: var(--primary-color);
+            margin-bottom: 20px;
+            font-weight: {{ heading_weight }};
+        }
+        
+        .video-wrapper {
+            position: relative;
+            padding-bottom: 56.25%;
+            height: 0;
+            overflow: hidden;
+            border-radius: calc(var(--border-radius) / 2);
+        }
+        
+        .video-wrapper iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        
+        .screenshots {
+            background: {% if dark_mode %}#1e1e1e{% else %}white{% endif %};
+            padding: 30px;
+            border-radius: var(--border-radius);
+            box-shadow: 0 10px 30px rgba(0,0,0,calc(var(--shadow-intensity)));
+            margin-bottom: var(--section-spacing);
+        }
+        
+        .screenshots h2 {
+            color: var(--primary-color);
+            margin-bottom: 20px;
+            font-weight: {{ heading_weight }};
+        }
+        
+        {% if screenshot_layout == 'carousel' %}
+        .screenshot-grid {
+            display: flex;
+            gap: 20px;
+            overflow-x: auto;
+            padding-bottom: 10px;
+        }
+        
+        .screenshot {
+            min-width: 250px;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        {% elif screenshot_layout == 'masonry' %}
+        .screenshot-grid {
+            columns: 3;
+            column-gap: 20px;
+        }
+        
+        .screenshot {
+            break-inside: avoid;
+            margin-bottom: 20px;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        {% elif screenshot_layout == 'staggered' %}
+        .screenshot-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+        
+        .screenshot:nth-child(odd) {
+            transform: translateY(10px);
+        }
+        
+        .screenshot {
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transition: transform var(--animation-speed);
+        }
+        {% else %}
+        .screenshot-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+        
+        .screenshot {
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transition: transform var(--animation-speed);
+        }
+        {% endif %}
+        
+        .screenshot:hover {
+            transform: scale(1.05);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .screenshot img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        
+        footer {
+            background: {% if dark_mode %}#0a0a0a{% else %}#2c3e50{% endif %};
+            color: {% if dark_mode %}#ccc{% else %}white{% endif %};
+            padding: 40px 0;
+            margin-top: 60px;
+        }
+        
+        .footer-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+            text-align: center;
+        }
+        
+        .footer-links {
+            margin-bottom: 20px;
+        }
+        
+        .footer-links a {
+            color: {% if dark_mode %}#aaa{% else %}#ecf0f1{% endif %};
+            text-decoration: none;
+            margin: 0 15px;
+            transition: color 0.3s;
+        }
+        
+        .footer-links a:hover {
+            color: var(--primary-color);
+        }
+        
+        .footer-copyright {
+            color: {% if dark_mode %}#777{% else %}#95a5a6{% endif %};
+            font-size: 0.9em;
+            margin-top: 20px;
+        }
+        
+        @media (max-width: 768px) {
+            .app-header {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            .app-info h1 {
+                font-size: 2em;
+            }
+            
+            .stats {
+                justify-content: center;
+            }
+            
+            {% if screenshot_layout == 'masonry' %}
+            .screenshot-grid {
+                columns: 2;
+            }
+            {% endif %}
+        }
+        
+        @media (max-width: 480px) {
+            {% if screenshot_layout == 'masonry' %}
+            .screenshot-grid {
+                columns: 1;
+            }
+            {% endif %}
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="hero">
+            <div class="app-header">
+                {% if icon %}
+                <img src="{{ icon }}" alt="{{ title }}" class="app-icon">
+                {% endif %}
+                <div class="app-info">
+                    <h1>{{ title }}</h1>
+                    <div class="developer">{{ developer }}</div>
+                    <div class="stats">
+                        <div class="stat">
+                            <span class="stat-label">Rating:</span>
+                            <span class="stat-value">⭐ {{ rating }}</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">Downloads:</span>
+                            <span class="stat-value">{{ installs }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <a href="https://play.google.com/store/apps/details?id={{ package_name }}" 
+               class="download-button" target="_blank">
+                Download on Google Play
+            </a>
+        </div>
+        
+        {% for section in sections_order %}
+            {% if section == 'description' and description %}
+            <div class="description">
+                <h2>About this app</h2>
+                <div class="description-text">{{ description[:1000] }}{% if description|length > 1000 %}...{% endif %}</div>
+            </div>
+            {% endif %}
+            
+            {% if section == 'video' and video %}
+            <div class="video-section">
+                <h2>Preview Video</h2>
+                <div class="video-wrapper">
+                    <iframe src="{{ video }}" 
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                            allowfullscreen>
+                    </iframe>
+                </div>
+            </div>
+            {% endif %}
+            
+            {% if section == 'screenshots' and screenshots %}
+            <div class="screenshots">
+                <h2>Screenshots</h2>
+                <div class="screenshot-grid">
+                    {% for screenshot in screenshots %}
+                    <div class="screenshot">
+                        <img src="{{ screenshot }}" alt="Screenshot {{ loop.index }}" loading="lazy">
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        {% endfor %}
+    </div>
+    
+    <footer>
+        <div class="footer-content">
+            <div class="footer-links">
+                <a href="/landing/{{ landing_id }}/privacy.php">Privacy Policy</a>
+                <a href="/landing/{{ landing_id }}/terms.php">Terms of Service</a>
+                <a href="mailto:mail@<?php echo $domain; ?>">Contact Us</a>
+            </div>
+            <div class="footer-copyright">
+                © 2024 <?php echo $domain; ?>. All rights reserved.<br>
+                {{ title }} is a trademark of {{ developer }}.
+            </div>
+        </div>
+    </footer>
+    
+    <!-- PHP для отслеживания или дополнительной логики -->
+    <?php
+    // Здесь можно добавить дополнительный PHP код
+    // Например, отслеживание посещений, A/B тестирование и т.д.
+    
+    // Логирование посещения (опционально)
+    $log_file = __DIR__ . '/visits.log';
+    $visitor_data = date('Y-m-d H:i:s') . ' | ' . $_SERVER['REMOTE_ADDR'] . ' | ' . $domain . PHP_EOL;
+    @file_put_contents($log_file, $visitor_data, FILE_APPEND);
+    ?>
+</body>
+</html>''')
+        
+        return template.render(**template_data)
 <html lang="{{ language }}">
 <head>
     <meta charset="UTF-8">
@@ -843,7 +1389,150 @@ def generate_html(app_data, landing_id):
         logger.error(f"Error generating HTML: {str(e)}\n{traceback.format_exc()}")
         raise
 
-def generate_privacy_policy(app_title, domain):
+def generate_privacy_policy_php(app_title):
+    """Генерация PHP политики конфиденциальности с динамическим доменом"""
+    return f'''<?php
+// Динамическое определение домена
+$domain = $_SERVER['HTTP_HOST'];
+if (strpos($domain, 'www.') === 0) {{
+    $domain = substr($domain, 4);
+}}
+if (strpos($domain, ':') !== false) {{
+    $domain = explode(':', $domain)[0];
+}}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy - {app_title}</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            background: #f5f5f5;
+        }}
+        .container {{
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }}
+        h1 {{
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }}
+        h2 {{
+            color: #34495e;
+            margin-top: 30px;
+        }}
+        .date {{
+            color: #7f8c8d;
+            font-style: italic;
+        }}
+        a {{
+            color: #3498db;
+            text-decoration: none;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Privacy Policy</h1>
+        <p class="date">Last updated: {datetime.now().strftime('%B %d, %Y')}</p>
+        
+        <h2>Introduction</h2>
+        <p>Welcome to {app_title}. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our mobile application.</p>
+        
+        <h2>Information We Collect</h2>
+        <p>We may collect information about you in a variety of ways:</p>
+        <ul>
+            <li><strong>Personal Data:</strong> Information that you voluntarily provide to us</li>
+            <li><strong>Usage Data:</strong> Information our servers automatically collect</li>
+            <li><strong>Device Data:</strong> Information about your mobile device</li>
+        </ul>
+        
+        <h2>Contact Us</h2>
+        <p>If you have questions about this Privacy Policy, please contact us at:</p>
+        <p>
+            General inquiries: <a href="mailto:mail@<?php echo $domain; ?>">mail@<?php echo $domain; ?></a><br>
+            Privacy concerns: <a href="mailto:privacy@<?php echo $domain; ?>">privacy@<?php echo $domain; ?></a><br>
+            Website: <a href="https://<?php echo $domain; ?>"><?php echo $domain; ?></a>
+        </p>
+    </div>
+</body>
+</html>'''
+
+def generate_terms_of_service_php(app_title):
+    """Генерация PHP пользовательского соглашения с динамическим доменом"""
+    return f'''<?php
+// Динамическое определение домена
+$domain = $_SERVER['HTTP_HOST'];
+if (strpos($domain, 'www.') === 0) {{
+    $domain = substr($domain, 4);
+}}
+if (strpos($domain, ':') !== false) {{
+    $domain = explode(':', $domain)[0];
+}}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terms of Service - {app_title}</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            background: #f5f5f5;
+        }}
+        .container {{
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }}
+        h1 {{
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }}
+        h2 {{
+            color: #34495e;
+            margin-top: 30px;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Terms of Service</h1>
+        <p>Effective Date: {datetime.now().strftime('%B %d, %Y')}</p>
+        
+        <h2>Agreement to Terms</h2>
+        <p>These Terms of Service constitute a legally binding agreement made between you and <?php echo $domain; ?>.</p>
+        
+        <h2>Contact Information</h2>
+        <p>If you have any questions about these Terms of Service, please contact us at:</p>
+        <p>
+            General: <a href="mailto:mail@<?php echo $domain; ?>">mail@<?php echo $domain; ?></a><br>
+            Legal: <a href="mailto:legal@<?php echo $domain; ?>">legal@<?php echo $domain; ?></a><br>
+            Support: <a href="mailto:support@<?php echo $domain; ?>">support@<?php echo $domain; ?></a><br>
+            Website: <a href="https://<?php echo $domain; ?>"><?php echo $domain; ?></a>
+        </p>
+    </div>
+</body>
+</html>'''
     """Генерация политики конфиденциальности"""
     return f'''<!DOCTYPE html>
 <html lang="en">
@@ -904,7 +1593,11 @@ def generate_privacy_policy(app_title, domain):
         
         <h2>Contact Us</h2>
         <p>If you have questions about this Privacy Policy, please contact us at:</p>
-        <p>Email: <a href="mailto:privacy@{domain}">privacy@{domain}</a></p>
+        <p>
+            General inquiries: <a href="mailto:mail@{domain}">mail@{domain}</a><br>
+            Privacy concerns: <a href="mailto:privacy@{domain}">privacy@{domain}</a><br>
+            Website: <a href="https://{domain}">{domain}</a>
+        </p>
     </div>
 </body>
 </html>'''
@@ -953,7 +1646,13 @@ def generate_terms_of_service(app_title, domain):
         <p>These Terms of Service constitute a legally binding agreement made between you and {domain}.</p>
         
         <h2>Contact Information</h2>
-        <p>Email: <a href="mailto:legal@{domain}">legal@{domain}</a></p>
+        <p>If you have any questions about these Terms of Service, please contact us at:</p>
+        <p>
+            General: <a href="mailto:mail@{domain}">mail@{domain}</a><br>
+            Legal: <a href="mailto:legal@{domain}">legal@{domain}</a><br>
+            Support: <a href="mailto:support@{domain}">support@{domain}</a><br>
+            Website: <a href="https://{domain}">{domain}</a>
+        </p>
     </div>
 </body>
 </html>'''
@@ -1044,7 +1743,7 @@ def generate_landing():
         logger.info(f"Landing generated successfully: {landing_id}")
         
         # Формируем URLs
-        landing_url = f"{BASE_URL}/landing/{landing_id}.html"
+        landing_url = f"{BASE_URL}/landing/{landing_id}/"
         archive_url = f"{BASE_URL}/download/{landing_id}.zip" if archive_path else None
         
         # Возвращаем ссылки на готовый лендинг и архив
@@ -1053,7 +1752,8 @@ def generate_landing():
             'landing_url': landing_url,
             'landing_id': landing_id,
             'package_name': package_name,
-            'language': language
+            'language': language,
+            'note': 'Landing uses PHP with dynamic domain detection'
         }
         
         if archive_url:
@@ -1075,43 +1775,47 @@ def generate_landing():
 def serve_landing(filename):
     """Отдача готового лендинга и его ресурсов"""
     try:
-        # Если это HTML файл
-        if filename.endswith('.html'):
-            # Проверяем прямой файл (старый формат)
-            direct_path = os.path.join(LANDINGS_DIR, filename)
-            if os.path.exists(direct_path):
-                return send_from_directory(LANDINGS_DIR, filename)
+        # Убираем слеш в конце если есть
+        if filename.endswith('/'):
+            filename = filename[:-1]
             
-            # Проверяем в директории (новый формат)
-            landing_id = filename.replace('.html', '')
-            landing_dir = os.path.join(LANDINGS_DIR, landing_id)
-            index_path = os.path.join(landing_dir, 'index.html')
+        # Если это просто ID лендинга, отдаем index.php
+        landing_dir = os.path.join(LANDINGS_DIR, filename)
+        if os.path.exists(landing_dir) and os.path.isdir(landing_dir):
+            index_path = os.path.join(landing_dir, 'index.php')
             if os.path.exists(index_path):
-                return send_from_directory(landing_dir, 'index.html')
+                # Возвращаем PHP файл как text/html для правильной обработки
+                with open(index_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                return content, 200, {'Content-Type': 'text/html; charset=utf-8'}
         
-        # Проверяем, есть ли слеш в пути (запрос к ресурсу внутри лендинга)
+        # Если это запрос к конкретному файлу внутри лендинга
         if '/' in filename:
             parts = filename.split('/', 1)
             landing_id = parts[0]
             resource_path = parts[1]
             
-            # Ищем ресурс в директории лендинга
             landing_dir = os.path.join(LANDINGS_DIR, landing_id)
             resource_full_path = os.path.join(landing_dir, resource_path)
             
             if os.path.exists(resource_full_path):
-                # Определяем директорию и имя файла
-                resource_dir = os.path.dirname(resource_full_path)
-                resource_name = os.path.basename(resource_full_path)
-                return send_from_directory(resource_dir, resource_name)
+                # Если это PHP файл
+                if resource_path.endswith('.php'):
+                    with open(resource_full_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    return content, 200, {'Content-Type': 'text/html; charset=utf-8'}
+                else:
+                    # Для других файлов (изображения и т.д.)
+                    resource_dir = os.path.dirname(resource_full_path)
+                    resource_name = os.path.basename(resource_full_path)
+                    return send_from_directory(resource_dir, resource_name)
         
-        # Для правовых документов в корне лендинга
-        if filename in ['privacy.html', 'terms.html']:
-            # Попробуем найти в общей директории legal
-            legal_path = os.path.join(LEGAL_DIR, filename)
-            if os.path.exists(legal_path):
-                return send_from_directory(LEGAL_DIR, filename)
-        
+        # Поддержка старого формата (.html файлы)
+        if filename.endswith('.html'):
+            direct_path = os.path.join(LANDINGS_DIR, filename)
+            if os.path.exists(direct_path):
+                return send_from_directory(LANDINGS_DIR, filename)
+            
         abort(404)
     except Exception as e:
         logger.error(f"Error serving landing resource {filename}: {str(e)}")
@@ -1206,4 +1910,7 @@ def internal_error(e):
     return jsonify({'error': 'Internal server error', 'details': str(e)}), 500
 
 if __name__ == '__main__':
+    # Логируем конфигурацию при запуске
+    logger.info(f"Starting application with BASE_URL: {BASE_URL}")
+    logger.info(f"Extracted domain: {get_domain_from_url(BASE_URL)}")
     app.run(host='0.0.0.0', port=8080, debug=True)
