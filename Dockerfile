@@ -1,20 +1,31 @@
-# 1. Выбираем базовый образ с Python
 FROM python:3.9-slim
 
-# 2. Устанавливаем рабочую директорию внутри контейнера
+# Установка системных зависимостей
+RUN apt-get update && apt-get install -y \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Установка рабочей директории
 WORKDIR /app
 
-# 3. Копируем файл с зависимостями
+# Копирование файла зависимостей
 COPY requirements.txt .
 
-# 4. Устанавливаем зависимости
+# Установка Python зависимостей
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 5. Копируем все остальные файлы проекта (скрипт и шаблоны)
-COPY . .
+# Копирование кода приложения
+COPY app.py .
 
-# 6. Сообщаем Docker, что наше приложение будет работать на порту 5000
-EXPOSE 5000
+# Создание директорий для статических файлов
+RUN mkdir -p /app/static/images /app/static/landings
 
-# 7. Команда, которая будет запущена при старте контейнера
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
+# Переменные окружения
+ENV PYTHONUNBUFFERED=1
+ENV BASE_URL=http://localhost:8080
+
+# Открытие порта
+EXPOSE 8080
+
+# Запуск приложения через Gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "4", "--timeout", "120", "--log-level", "info", "app:app"]
