@@ -1,128 +1,528 @@
-import io
-import requests
+import os
+import json
 import logging
-import base64 # <-- Добавлен новый модуль
-from flask import Flask, request, jsonify
-from google_play_scraper import app as gp_app
-from jinja2 import Environment, FileSystemLoader
-import colorgram
+import hashlib
+import requests
+from flask import Flask, request, jsonify, send_from_directory, abort
+from google_play_scraper import app as play_scraper
 from PIL import Image
+from colorthief import ColorThief
+import io
+from datetime import datetime
+from jinja2 import Template
+import re
 
-# 1. Настраиваем логирование
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-# 2. Создаем приложение Flask
 app = Flask(__name__)
-env = Environment(loader=FileSystemLoader('.'))
 
-# 3. Читаем CSS-файл
-try:
-    with open('style.css', 'r', encoding='utf-8') as f:
-        css_styles = f.read()
-except FileNotFoundError:
-    logging.error("Файл style.css не найден! Стили не будут загружены.")
-    css_styles = "/* CSS file not found */"
+# Конфигурация
+BASE_URL = os.environ.get('BASE_URL', 'http://localhost:8080')
+STATIC_DIR = '/app/static'
+LANDINGS_DIR = os.path.join(STATIC_DIR, 'landings')
+IMAGES_DIR = os.path.join(STATIC_DIR, 'images')
 
-# 4. Вспомогательные функции
+# Создаем необходимые директории
+os.makedirs(LANDINGS_DIR, exist_ok=True)
+os.makedirs(IMAGES_DIR, exist_ok=True)
 
-# --- НОВАЯ ФУНКЦИЯ ДЛЯ СКАЧИВАНИЯ И КОДИРОВАНИЯ КАРТИНОК ---
-def image_to_base64(url):
+def format_installs(installs):
+    """Форматирование числа установок в человекочитаемый вид"""
+    if installs >= 1_000_000_000:
+        return f"{installs / 1_000_000_000:.0f}B+"
+    elif installs >= 1_000_000:
+        return f"{installs / 1_000_000:.0f}M+"
+    elif installs >= 1_000:
+        return f"{installs / 1_000:.0f}K+"
+    else:
+        return str(installs)
+
+def get_youtube_embed_url(video_url):
+    """Преобразование YouTube URL в embed формат"""
+    if not video_url:
+        return None
+    
+    video_id_match = re.search(r'(?:v=|\/)([0-9A-Za-z_-]{11})', video_url)
+    if video_id_match:
+        video_id = video_id_match.group(1)
+        return f"https://www.youtube.com/embed/{video_id}"
+    return None
+
+def download_image(url, save_path):
+    """Скачивание и сохранение изображения"""
     try:
-        logging.info(f"Скачиваю картинку: {url[:50]}...")
+        if os.path.exists(save_path):
+            logger.info(f"Image already cached: {save_path}")
+            return True
+        
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         
-        # Получаем тип контента (например, 'image/png')
-        mime_type = response.headers.get('content-type')
-        if not mime_type or not mime_type.startswith('image/'):
-            logging.warning(f"URL не является картинкой: {url}")
-            return ""
-            
-        # Кодируем бинарные данные картинки в Base64
-        encoded_string = base64.b64encode(response.content).decode('utf-8')
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
         
-        # Возвращаем готовую строку для вставки в HTML
-        return f"data:{mime_type};base64,{encoded_string}"
+        with open(save_path, 'wb') as f:
+            f.write(response.content)
+        
+        logger.info(f"Downloaded image: {url} -> {save_path}")
+        return True
     except Exception as e:
-        logging.error(f"Не удалось скачать или обработать картинку {url}: {e}")
-        return "" # Возвращаем пустую строку в случае ошибки
+        logger.error(f"Failed to download image {url}: {str(e)}")
+        return False
 
-def get_palette_from_url(image_url):
-    # ... (содержимое этой функции без изменений)
+def extract_dominant_colors(image_path, num_colors=3):
+    """Извлечение доминирующих цветов из изображения"""
     try:
-        response = requests.get(image_url, stream=True)
-        response.raise_for_status()
-        img = Image.open(io.BytesIO(response.content)).convert('RGB')
-        colors = colorgram.extract(img, 6)
-        primary_color = '#%02x%02x%02x' % colors[0].rgb
-        secondary_color = '#%02x%02x%02x' % colors[1].rgb
-        return primary_color, secondary_color
+        color_thief = ColorThief(image_path)
+        palette = color_thief.get_palette(color_count=num_colors, quality=1)
+        
+        colors = []
+        for rgb in palette[:num_colors]:
+            hex_color = '#{:02x}{:02x}{:02x}'.format(rgb[0], rgb[1], rgb[2])
+            colors.append(hex_color)
+        
+        # Заполняем недостающие цвета дефолтными
+        while len(colors) < 3:
+            colors.append('#4285f4')
+        
+        return colors
     except Exception as e:
-        logging.error(f"Ошибка при извлечении палитры: {e}")
-        return "#2c3e50", "#3498db"
+        logger.error(f"Failed to extract colors: {str(e)}")
+        return ['#4285f4', '#34a853', '#fbbc04']  # Google colors as fallback
 
-def format_downloads(num):
-    # ... (содержимое этой функции без изменений)
-    if num is None: return "N/A"
-    if num < 1000: return str(num)
-    magnitude = 0
-    while abs(num) >= 1000:
-        magnitude += 1
-        num /= 1000.0
-    return '{}{}+'.format('{:f}'.format(num).rstrip('0').rstrip('.'), ['', 'K', 'M', 'B', 'T'][magnitude])
+def generate_landing_id(package_name, language):
+    """Генерация уникального ID для лендинга"""
+    content = f"{package_name}_{language}_{datetime.now().strftime('%Y%m%d')}"
+    return hashlib.md5(content.encode()).hexdigest()[:12]
 
-# 5. Основной маршрут
+def process_app_data(package_name, language):
+    """Получение и обработка данных приложения из Google Play"""
+    try:
+        logger.info(f"Fetching app data for {package_name} in {language}")
+        
+        # Получаем данные из Google Play
+        app_data = play_scraper(
+            package_name,
+            lang=language,
+            country='us'
+        )
+        
+        if not app_data:
+            return None
+        
+        # Создаем директорию для изображений приложения
+        app_images_dir = os.path.join(IMAGES_DIR, package_name)
+        os.makedirs(app_images_dir, exist_ok=True)
+        
+        # Обрабатываем изображения
+        processed_data = {
+            'title': app_data.get('title', 'Unknown App'),
+            'developer': app_data.get('developer', 'Unknown Developer'),
+            'description': app_data.get('description', ''),
+            'rating': round(app_data.get('score', 0), 1) if app_data.get('score') else 0,
+            'installs': format_installs(app_data.get('minInstalls', 0)),
+            'package_name': package_name,
+            'language': language
+        }
+        
+        # Скачиваем иконку
+        if app_data.get('icon'):
+            icon_path = os.path.join(app_images_dir, 'icon.png')
+            if download_image(app_data['icon'], icon_path):
+                processed_data['icon'] = f"/static/images/{package_name}/icon.png"
+                processed_data['colors'] = extract_dominant_colors(icon_path)
+            else:
+                processed_data['icon'] = None
+                processed_data['colors'] = ['#4285f4', '#34a853', '#fbbc04']
+        
+        # Скачиваем обложку
+        if app_data.get('headerImage'):
+            cover_path = os.path.join(app_images_dir, 'cover.jpg')
+            if download_image(app_data['headerImage'], cover_path):
+                processed_data['cover'] = f"/static/images/{package_name}/cover.jpg"
+            else:
+                processed_data['cover'] = None
+        
+        # Скачиваем скриншоты
+        screenshots = []
+        if app_data.get('screenshots'):
+            for i, screenshot_url in enumerate(app_data['screenshots'][:6]):
+                screenshot_path = os.path.join(app_images_dir, f'screenshot_{i}.jpg')
+                if download_image(screenshot_url, screenshot_path):
+                    screenshots.append(f"/static/images/{package_name}/screenshot_{i}.jpg")
+        processed_data['screenshots'] = screenshots
+        
+        # Обрабатываем видео
+        if app_data.get('video'):
+            processed_data['video'] = get_youtube_embed_url(app_data['video'])
+        else:
+            processed_data['video'] = None
+        
+        logger.info(f"Successfully processed app data for {package_name}")
+        return processed_data
+        
+    except Exception as e:
+        logger.error(f"Failed to process app data: {str(e)}")
+        return None
+
+def generate_html(app_data):
+    """Генерация HTML страницы лендинга"""
+    template = Template('''<!DOCTYPE html>
+<html lang="{{ language }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - Download Mobile App</title>
+    <style>
+        :root {
+            --primary-color: {{ colors[0] }};
+            --secondary-color: {{ colors[1] }};
+            --accent-color: {{ colors[2] }};
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .hero {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            margin-bottom: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.1);
+        }
+        
+        .app-header {
+            display: flex;
+            align-items: center;
+            gap: 30px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+        
+        .app-icon {
+            width: 120px;
+            height: 120px;
+            border-radius: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+        }
+        
+        .app-info h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            color: var(--primary-color);
+        }
+        
+        .developer {
+            color: #666;
+            font-size: 1.1em;
+            margin-bottom: 15px;
+        }
+        
+        .stats {
+            display: flex;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+        
+        .stat {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .stat-label {
+            color: #999;
+            font-size: 0.9em;
+        }
+        
+        .stat-value {
+            font-weight: bold;
+            color: var(--primary-color);
+            font-size: 1.2em;
+        }
+        
+        .download-button {
+            display: inline-block;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            padding: 15px 40px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-top: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: transform 0.3s;
+        }
+        
+        .download-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.25);
+        }
+        
+        .description {
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 15px;
+            margin-bottom: 40px;
+        }
+        
+        .description h2 {
+            color: var(--primary-color);
+            margin-bottom: 15px;
+        }
+        
+        .description-text {
+            color: #555;
+            line-height: 1.8;
+            white-space: pre-wrap;
+        }
+        
+        {% if video %}
+        .video-section {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            margin-bottom: 40px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        
+        .video-section h2 {
+            color: var(--primary-color);
+            margin-bottom: 20px;
+        }
+        
+        .video-wrapper {
+            position: relative;
+            padding-bottom: 56.25%;
+            height: 0;
+            overflow: hidden;
+            border-radius: 10px;
+        }
+        
+        .video-wrapper iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        {% endif %}
+        
+        {% if screenshots %}
+        .screenshots {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        
+        .screenshots h2 {
+            color: var(--primary-color);
+            margin-bottom: 20px;
+        }
+        
+        .screenshot-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+        
+        .screenshot {
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transition: transform 0.3s;
+        }
+        
+        .screenshot:hover {
+            transform: scale(1.05);
+        }
+        
+        .screenshot img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        {% endif %}
+        
+        @media (max-width: 768px) {
+            .app-header {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            .app-info h1 {
+                font-size: 2em;
+            }
+            
+            .stats {
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="hero">
+            <div class="app-header">
+                {% if icon %}
+                <img src="{{ icon }}" alt="{{ title }}" class="app-icon">
+                {% endif %}
+                <div class="app-info">
+                    <h1>{{ title }}</h1>
+                    <div class="developer">{{ developer }}</div>
+                    <div class="stats">
+                        <div class="stat">
+                            <span class="stat-label">Rating:</span>
+                            <span class="stat-value">⭐ {{ rating }}</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">Downloads:</span>
+                            <span class="stat-value">{{ installs }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <a href="https://play.google.com/store/apps/details?id={{ package_name }}" 
+               class="download-button" target="_blank">
+                Download on Google Play
+            </a>
+        </div>
+        
+        {% if description %}
+        <div class="description">
+            <h2>About this app</h2>
+            <div class="description-text">{{ description[:1000] }}{% if description|length > 1000 %}...{% endif %}</div>
+        </div>
+        {% endif %}
+        
+        {% if video %}
+        <div class="video-section">
+            <h2>Preview Video</h2>
+            <div class="video-wrapper">
+                <iframe src="{{ video }}" 
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                        allowfullscreen>
+                </iframe>
+            </div>
+        </div>
+        {% endif %}
+        
+        {% if screenshots %}
+        <div class="screenshots">
+            <h2>Screenshots</h2>
+            <div class="screenshot-grid">
+                {% for screenshot in screenshots %}
+                <div class="screenshot">
+                    <img src="{{ screenshot }}" alt="Screenshot {{ loop.index }}" loading="lazy">
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>''')
+    
+    return template.render(**app_data)
+
 @app.route('/generate-landing', methods=['POST'])
 def generate_landing():
-    data = request.json
-    package_name = data.get('packageName')
-    language = data.get('language', 'en')
-    
-    logging.info(f"Получен запрос для пакета: {package_name}, язык: {language}")
-
-    if not package_name:
-        return jsonify({"error": "packageName не указан"}), 400
-
+    """API endpoint для генерации лендинга"""
     try:
-        logging.info(f"Начинаю скрапинг Google Play для {package_name}...")
-        app_details = gp_app(package_name, lang=language, country='US')
-        logging.info(f"Скрапинг для {package_name} успешно завершен.")
-
-        logging.info("Извлекаю цвета из иконки...")
-        primary_color, secondary_color = get_palette_from_url(app_details['icon'])
-        logging.info(f"Цвета успешно извлечены: {primary_color}, {secondary_color}")
-
-        # --- ОБНОВЛЕНИЕ: КОНВЕРТИРУЕМ ВСЕ ССЫЛКИ НА КАРТИНКИ В BASE64 ---
-        context = {
-            'lang': language,
-            'title': app_details['title'],
-            'developer': app_details['developer'],
-            'icon_url': image_to_base64(app_details['icon']),
-            'cover_image': image_to_base64(app_details.get('cover', app_details['screenshots'][0])),
-            'screenshots': [image_to_base64(url) for url in app_details['screenshots']],
-            'description': app_details['description'],
-            'store_url': app_details['url'],
-            'rating': f"{app_details.get('score', 0):.1f}",
-            'downloads': format_downloads(app_details.get('minInstalls', 0)),
-            'video_url': app_details.get('video', '').replace('watch?v=', 'embed/'),
-            'primary_color': primary_color,
-            'secondary_color': secondary_color,
-            'page_styles': css_styles
-        }
-
-        logging.info("Начинаю рендеринг HTML-шаблона...")
-        template = env.get_template('template.html')
-        html_output = template.render(context)
-        logging.info("Рендеринг завершен. Отправляю HTML-ответ.")
+        # Получаем параметры из запроса
+        data = request.get_json()
         
-        return html_output, 200, {'Content-Type': 'text/html; charset=utf-8'}
-
+        if not data or 'packageName' not in data:
+            logger.error("Missing packageName in request")
+            return jsonify({'error': 'packageName is required'}), 400
+        
+        package_name = data['packageName']
+        language = data.get('language', 'en')
+        
+        logger.info(f"Received request for {package_name} in {language}")
+        
+        # Получаем и обрабатываем данные приложения
+        app_data = process_app_data(package_name, language)
+        
+        if not app_data:
+            logger.error(f"App not found: {package_name}")
+            return jsonify({'error': 'App not found'}), 404
+        
+        # Генерируем уникальный ID для лендинга
+        landing_id = generate_landing_id(package_name, language)
+        landing_filename = f"{landing_id}.html"
+        landing_path = os.path.join(LANDINGS_DIR, landing_filename)
+        
+        # Генерируем HTML
+        html_content = generate_html(app_data)
+        
+        # Сохраняем HTML файл
+        with open(landing_path, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        
+        logger.info(f"Landing generated successfully: {landing_filename}")
+        
+        # Формируем URL лендинга
+        landing_url = f"{BASE_URL}/landing/{landing_filename}"
+        
+        # Возвращаем ссылку на готовый лендинг
+        return jsonify({
+            'success': True,
+            'landing_url': landing_url,
+            'landing_id': landing_id,
+            'package_name': package_name,
+            'language': language
+        }), 200
+        
     except Exception as e:
-        logging.error(f"Произошла критическая ошибка при обработке {package_name}:", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Internal error: {str(e)}")
+        return jsonify({'error': 'An internal error occurred'}), 500
 
-# 6. Тестовый маршрут
+@app.route('/landing/<filename>')
+def serve_landing(filename):
+    """Отдача готового лендинга"""
+    try:
+        return send_from_directory(LANDINGS_DIR, filename)
+    except:
+        abort(404)
+
+@app.route('/static/images/<path:filepath>')
+def serve_image(filepath):
+    """Отдача изображений"""
+    try:
+        return send_from_directory(IMAGES_DIR, filepath)
+    except:
+        abort(404)
+
 @app.route('/health', methods=['GET'])
 def health_check():
-    logging.info(">>> Health check endpoint was called! Server is responding.")
-    return "OK", 200
+    """Health check endpoint"""
+    return jsonify({'status': 'healthy'}), 200
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080, debug=True)
