@@ -18,11 +18,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py .
 
 # Создание директорий для статических файлов
-RUN mkdir -p /app/static/images /app/static/landings
+RUN mkdir -p /app/static/images /app/static/landings /app/static/archives /app/static/legal
 
 # Переменные окружения
 ENV PYTHONUNBUFFERED=1
-ENV BASE_URL=http://localhost:8080
+ENV BASE_URL=https://vibe.clickapi.org
 
 # Открытие порта
 EXPOSE 8080
