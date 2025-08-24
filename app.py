@@ -76,3 +76,10 @@ def generate_landing():
         # --- ДОБАВЛЕНО: логируем полную ошибку перед отправкой ответа ---
         logging.error(f"Произошла критическая ошибка при обработке {package_name}:", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+# Этот код нужно добавить в конец файла app.py
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    logging.info(">>> Health check endpoint was called! Server is responding.")
+    return "OK", 200
