@@ -1,20 +1,21 @@
 import io
 import requests
 import logging
+import base64 # <-- Добавлен новый модуль
 from flask import Flask, request, jsonify
 from google_play_scraper import app as gp_app
 from jinja2 import Environment, FileSystemLoader
 import colorgram
 from PIL import Image
 
-# 1. Настраиваем логирование для отладки
+# 1. Настраиваем логирование
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # 2. Создаем приложение Flask
 app = Flask(__name__)
 env = Environment(loader=FileSystemLoader('.'))
 
-# 3. Читаем CSS-файл в переменную при старте, чтобы встраивать его в HTML
+# 3. Читаем CSS-файл
 try:
     with open('style.css', 'r', encoding='utf-8') as f:
         css_styles = f.read()
@@ -23,7 +24,31 @@ except FileNotFoundError:
     css_styles = "/* CSS file not found */"
 
 # 4. Вспомогательные функции
+
+# --- НОВАЯ ФУНКЦИЯ ДЛЯ СКАЧИВАНИЯ И КОДИРОВАНИЯ КАРТИНОК ---
+def image_to_base64(url):
+    try:
+        logging.info(f"Скачиваю картинку: {url[:50]}...")
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        
+        # Получаем тип контента (например, 'image/png')
+        mime_type = response.headers.get('content-type')
+        if not mime_type or not mime_type.startswith('image/'):
+            logging.warning(f"URL не является картинкой: {url}")
+            return ""
+            
+        # Кодируем бинарные данные картинки в Base64
+        encoded_string = base64.b64encode(response.content).decode('utf-8')
+        
+        # Возвращаем готовую строку для вставки в HTML
+        return f"data:{mime_type};base64,{encoded_string}"
+    except Exception as e:
+        logging.error(f"Не удалось скачать или обработать картинку {url}: {e}")
+        return "" # Возвращаем пустую строку в случае ошибки
+
 def get_palette_from_url(image_url):
+    # ... (содержимое этой функции без изменений)
     try:
         response = requests.get(image_url, stream=True)
         response.raise_for_status()
@@ -37,6 +62,7 @@ def get_palette_from_url(image_url):
         return "#2c3e50", "#3498db"
 
 def format_downloads(num):
+    # ... (содержимое этой функции без изменений)
     if num is None: return "N/A"
     if num < 1000: return str(num)
     magnitude = 0
@@ -45,7 +71,7 @@ def format_downloads(num):
         num /= 1000.0
     return '{}{}+'.format('{:f}'.format(num).rstrip('0').rstrip('.'), ['', 'K', 'M', 'B', 'T'][magnitude])
 
-# 5. Основной маршрут для генерации лендинга
+# 5. Основной маршрут
 @app.route('/generate-landing', methods=['POST'])
 def generate_landing():
     data = request.json
@@ -55,7 +81,6 @@ def generate_landing():
     logging.info(f"Получен запрос для пакета: {package_name}, язык: {language}")
 
     if not package_name:
-        logging.warning("Запрос без packageName, возвращаем ошибку 400.")
         return jsonify({"error": "packageName не указан"}), 400
 
     try:
@@ -67,13 +92,14 @@ def generate_landing():
         primary_color, secondary_color = get_palette_from_url(app_details['icon'])
         logging.info(f"Цвета успешно извлечены: {primary_color}, {secondary_color}")
 
+        # --- ОБНОВЛЕНИЕ: КОНВЕРТИРУЕМ ВСЕ ССЫЛКИ НА КАРТИНКИ В BASE64 ---
         context = {
             'lang': language,
             'title': app_details['title'],
             'developer': app_details['developer'],
-            'icon_url': app_details['icon'],
-            'cover_image': app_details.get('cover', app_details['screenshots'][0]),
-            'screenshots': app_details['screenshots'],
+            'icon_url': image_to_base64(app_details['icon']),
+            'cover_image': image_to_base64(app_details.get('cover', app_details['screenshots'][0])),
+            'screenshots': [image_to_base64(url) for url in app_details['screenshots']],
             'description': app_details['description'],
             'store_url': app_details['url'],
             'rating': f"{app_details.get('score', 0):.1f}",
@@ -95,7 +121,7 @@ def generate_landing():
         logging.error(f"Произошла критическая ошибка при обработке {package_name}:", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
-# 6. Тестовый маршрут для проверки работоспособности сервера
+# 6. Тестовый маршрут
 @app.route('/health', methods=['GET'])
 def health_check():
     logging.info(">>> Health check endpoint was called! Server is responding.")
