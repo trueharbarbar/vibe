@@ -412,11 +412,6 @@ $base_url = $protocol . '://' . $_SERVER['HTTP_HOST'];
             padding: {{ section_spacing }}px;
             margin-bottom: var(--section-spacing);
             box-shadow: 0 10px 40px rgba(0,0,0,calc(var(--shadow-intensity)));
-            {% if layout_style == 'modern' %}
-            border: 1px solid {{ colors[0] }}22;
-            {% elif layout_style == 'bold' %}
-            border-left: 5px solid var(--primary-color);
-            {% endif %}
         }
         
         .app-header {
@@ -425,20 +420,13 @@ $base_url = $protocol . '://' . $_SERVER['HTTP_HOST'];
             gap: 30px;
             margin-bottom: 30px;
             flex-wrap: wrap;
-            {% if hero_layout == 'center-aligned' %}
-            justify-content: center;
-            text-align: center;
-            {% elif hero_layout == 'right-aligned' %}
-            flex-direction: row-reverse;
-            text-align: right;
-            {% endif %}
         }
         
         .app-icon {
             width: 120px;
             height: 120px;
             border-radius: 25px;
-            box-shadow: 0 10px 30px rgba(0,0,0,calc(var(--shadow-intensity) * 1.5));
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
             transition: transform var(--animation-speed);
         }
         
@@ -451,9 +439,6 @@ $base_url = $protocol . '://' . $_SERVER['HTTP_HOST'];
             font-weight: {{ heading_weight }};
             margin-bottom: 10px;
             color: var(--primary-color);
-            {% if layout_style == 'elegant' %}
-            letter-spacing: -0.02em;
-            {% endif %}
         }
         
         .developer {
@@ -462,35 +447,6 @@ $base_url = $protocol . '://' . $_SERVER['HTTP_HOST'];
             margin-bottom: 15px;
         }
         
-        {% if stats_style == 'cards' %}
-        .stats {
-            display: flex;
-            gap: 20px;
-            flex-wrap: wrap;
-        }
-        
-        .stat {
-            background: {{ colors[0] }}11;
-            padding: 12px 20px;
-            border-radius: 12px;
-            border: 1px solid {{ colors[0] }}33;
-        }
-        {% elif stats_style == 'badges' %}
-        .stats {
-            display: flex;
-            gap: 15px;
-            flex-wrap: wrap;
-        }
-        
-        .stat {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: linear-gradient(135deg, {{ colors[0] }}22, {{ colors[1] }}22);
-            padding: 8px 16px;
-            border-radius: 20px;
-        }
-        {% else %}
         .stats {
             display: flex;
             gap: 30px;
@@ -502,7 +458,6 @@ $base_url = $protocol . '://' . $_SERVER['HTTP_HOST'];
             align-items: center;
             gap: 8px;
         }
-        {% endif %}
         
         .stat-label {
             color: {% if dark_mode %}#aaa{% else %}#999{% endif %};
@@ -515,7 +470,6 @@ $base_url = $protocol . '://' . $_SERVER['HTTP_HOST'];
             font-size: 1.2em;
         }
         
-        {% if button_style == 'gradient' %}
         .download-button {
             display: inline-block;
             background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
@@ -529,49 +483,12 @@ $base_url = $protocol . '://' . $_SERVER['HTTP_HOST'];
             box-shadow: 0 10px 30px rgba(0,0,0,0.2);
             transition: all var(--animation-speed);
         }
-        {% elif button_style == 'outline-glow' %}
-        .download-button {
-            display: inline-block;
-            background: transparent;
-            color: var(--primary-color);
-            border: 2px solid var(--primary-color);
-            padding: 15px 40px;
-            border-radius: {{ button_radius }};
-            text-decoration: none;
-            font-size: 1.2em;
-            font-weight: bold;
-            margin-top: 30px;
-            transition: all var(--animation-speed);
-            position: relative;
-        }
-        
-        .download-button:hover {
-            background: var(--primary-color);
-            color: white;
-            box-shadow: 0 0 30px var(--primary-color);
-        }
-        {% else %}
-        .download-button {
-            display: inline-block;
-            background: var(--primary-color);
-            color: white;
-            padding: 15px 40px;
-            border-radius: {{ button_radius }};
-            text-decoration: none;
-            font-size: 1.2em;
-            font-weight: bold;
-            margin-top: 30px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.15);
-            transition: all var(--animation-speed);
-        }
-        {% endif %}
         
         .download-button:hover {
             transform: translateY(-3px);
             box-shadow: 0 15px 40px rgba(0,0,0,0.25);
         }
         
-        {% if description_style == 'card' %}
         .description {
             background: {% if dark_mode %}#1e1e1e{% else %}white{% endif %};
             padding: 30px;
@@ -579,22 +496,6 @@ $base_url = $protocol . '://' . $_SERVER['HTTP_HOST'];
             margin-bottom: var(--section-spacing);
             box-shadow: 0 5px 20px rgba(0,0,0,calc(var(--shadow-intensity)));
         }
-        {% elif description_style == 'bordered' %}
-        .description {
-            background: {% if dark_mode %}#1a1a1a{% else %}#fafafa{% endif %};
-            padding: 30px;
-            border-radius: var(--border-radius);
-            margin-bottom: var(--section-spacing);
-            border: 2px solid {{ colors[0] }}33;
-        }
-        {% else %}
-        .description {
-            background: {{ colors[0] }}08;
-            padding: 30px;
-            border-radius: var(--border-radius);
-            margin-bottom: var(--section-spacing);
-        }
-        {% endif %}
         
         .description h2 {
             color: var(--primary-color);
@@ -606,37 +507,6 @@ $base_url = $protocol . '://' . $_SERVER['HTTP_HOST'];
             color: {% if dark_mode %}#ccc{% else %}#555{% endif %};
             line-height: 1.8;
             white-space: pre-wrap;
-        }
-        
-        .video-section {
-            background: {% if dark_mode %}#1e1e1e{% else %}white{% endif %};
-            padding: 30px;
-            border-radius: var(--border-radius);
-            margin-bottom: var(--section-spacing);
-            box-shadow: 0 10px 30px rgba(0,0,0,calc(var(--shadow-intensity)));
-        }
-        
-        .video-section h2 {
-            color: var(--primary-color);
-            margin-bottom: 20px;
-            font-weight: {{ heading_weight }};
-        }
-        
-        .video-wrapper {
-            position: relative;
-            padding-bottom: 56.25%;
-            height: 0;
-            overflow: hidden;
-            border-radius: calc(var(--border-radius) / 2);
-        }
-        
-        .video-wrapper iframe {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            border: none;
         }
         
         .screenshots {
@@ -653,51 +523,6 @@ $base_url = $protocol . '://' . $_SERVER['HTTP_HOST'];
             font-weight: {{ heading_weight }};
         }
         
-        {% if screenshot_layout == 'carousel' %}
-        .screenshot-grid {
-            display: flex;
-            gap: 20px;
-            overflow-x: auto;
-            padding-bottom: 10px;
-        }
-        
-        .screenshot {
-            min-width: 250px;
-            border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        }
-        {% elif screenshot_layout == 'masonry' %}
-        .screenshot-grid {
-            columns: 3;
-            column-gap: 20px;
-        }
-        
-        .screenshot {
-            break-inside: avoid;
-            margin-bottom: 20px;
-            border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        }
-        {% elif screenshot_layout == 'staggered' %}
-        .screenshot-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-        }
-        
-        .screenshot:nth-child(odd) {
-            transform: translateY(10px);
-        }
-        
-        .screenshot {
-            border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-            transition: transform var(--animation-speed);
-        }
-        {% else %}
         .screenshot-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -710,7 +535,6 @@ $base_url = $protocol . '://' . $_SERVER['HTTP_HOST'];
             box-shadow: 0 5px 15px rgba(0,0,0,0.1);
             transition: transform var(--animation-speed);
         }
-        {% endif %}
         
         .screenshot:hover {
             transform: scale(1.05);
@@ -771,20 +595,6 @@ $base_url = $protocol . '://' . $_SERVER['HTTP_HOST'];
             .stats {
                 justify-content: center;
             }
-            
-            {% if screenshot_layout == 'masonry' %}
-            .screenshot-grid {
-                columns: 2;
-            }
-            {% endif %}
-        }
-        
-        @media (max-width: 480px) {
-            {% if screenshot_layout == 'masonry' %}
-            .screenshot-grid {
-                columns: 1;
-            }
-            {% endif %}
         }
     </style>
 </head>
@@ -817,39 +627,25 @@ $base_url = $protocol . '://' . $_SERVER['HTTP_HOST'];
             </a>
         </div>
         
-        {% for section in sections_order %}
-            {% if section == 'description' and description %}
-            <div class="description">
-                <h2>About this app</h2>
-                <div class="description-text">{{ description[:1000] }}{% if description|length > 1000 %}...{% endif %}</div>
-            </div>
-            {% endif %}
-            
-            {% if section == 'video' and video %}
-            <div class="video-section">
-                <h2>Preview Video</h2>
-                <div class="video-wrapper">
-                    <iframe src="{{ video }}" 
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                            allowfullscreen>
-                    </iframe>
+        {% if description %}
+        <div class="description">
+            <h2>About this app</h2>
+            <div class="description-text">{{ description[:1000] }}{% if description|length > 1000 %}...{% endif %}</div>
+        </div>
+        {% endif %}
+        
+        {% if screenshots %}
+        <div class="screenshots">
+            <h2>Screenshots</h2>
+            <div class="screenshot-grid">
+                {% for screenshot in screenshots %}
+                <div class="screenshot">
+                    <img src="{{ screenshot }}" alt="Screenshot {{ loop.index }}" loading="lazy">
                 </div>
+                {% endfor %}
             </div>
-            {% endif %}
-            
-            {% if section == 'screenshots' and screenshots %}
-            <div class="screenshots">
-                <h2>Screenshots</h2>
-                <div class="screenshot-grid">
-                    {% for screenshot in screenshots %}
-                    <div class="screenshot">
-                        <img src="{{ screenshot }}" alt="Screenshot {{ loop.index }}" loading="lazy">
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endif %}
-        {% endfor %}
+        </div>
+        {% endif %}
     </div>
     
     <footer>
@@ -865,20 +661,14 @@ $base_url = $protocol . '://' . $_SERVER['HTTP_HOST'];
             </div>
         </div>
     </footer>
-    
-    <!-- PHP для отслеживания или дополнительной логики -->
-    <?php
-    // Здесь можно добавить дополнительный PHP код
-    // Например, отслеживание посещений, A/B тестирование и т.д.
-    
-    // Логирование посещения (опционально)
-    $log_file = __DIR__ . '/visits.log';
-    $visitor_data = date('Y-m-d H:i:s') . ' | ' . $_SERVER['REMOTE_ADDR'] . ' | ' . $domain . PHP_EOL;
-    @file_put_contents($log_file, $visitor_data, FILE_APPEND);
-    ?>
 </body>
-</html>''')
+</html>"""
         
+        # Объединяем PHP заголовок и HTML шаблон
+        full_template = php_header + html_template
+        
+        # Создаем шаблон Jinja2 и рендерим
+        template = Template(full_template)
         return template.render(**template_data)
 <html lang="{{ language }}">
 <head>
