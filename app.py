@@ -1,21 +1,29 @@
 import io
 import requests
-import logging  # --- ДОБАВЛЕНО: импортируем модуль логирования
+import logging
 from flask import Flask, request, jsonify
 from google_play_scraper import app as gp_app
 from jinja2 import Environment, FileSystemLoader
 import colorgram
 from PIL import Image
 
-# --- ДОБАВЛЕНО: настраиваем логирование ---
+# 1. Настраиваем логирование для отладки
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-# -----------------------------------------
 
+# 2. Создаем приложение Flask
 app = Flask(__name__)
 env = Environment(loader=FileSystemLoader('.'))
 
+# 3. Читаем CSS-файл в переменную при старте, чтобы встраивать его в HTML
+try:
+    with open('style.css', 'r', encoding='utf-8') as f:
+        css_styles = f.read()
+except FileNotFoundError:
+    logging.error("Файл style.css не найден! Стили не будут загружены.")
+    css_styles = "/* CSS file not found */"
+
+# 4. Вспомогательные функции
 def get_palette_from_url(image_url):
-    # ... (содержимое этой функции без изменений)
     try:
         response = requests.get(image_url, stream=True)
         response.raise_for_status()
@@ -29,7 +37,6 @@ def get_palette_from_url(image_url):
         return "#2c3e50", "#3498db"
 
 def format_downloads(num):
-    # ... (содержимое этой функции без изменений)
     if num is None: return "N/A"
     if num < 1000: return str(num)
     magnitude = 0
@@ -38,13 +45,13 @@ def format_downloads(num):
         num /= 1000.0
     return '{}{}+'.format('{:f}'.format(num).rstrip('0').rstrip('.'), ['', 'K', 'M', 'B', 'T'][magnitude])
 
+# 5. Основной маршрут для генерации лендинга
 @app.route('/generate-landing', methods=['POST'])
 def generate_landing():
     data = request.json
     package_name = data.get('packageName')
     language = data.get('language', 'en')
     
-    # --- ДОБАВЛЕНО: логируем начало работы ---
     logging.info(f"Получен запрос для пакета: {package_name}, язык: {language}")
 
     if not package_name:
@@ -61,8 +68,20 @@ def generate_landing():
         logging.info(f"Цвета успешно извлечены: {primary_color}, {secondary_color}")
 
         context = {
-            # ... (содержимое context без изменений)
-            'lang': language, 'title': app_details['title'], 'developer': app_details['developer'], 'icon_url': app_details['icon'], 'cover_image': app_details.get('cover', app_details['screenshots'][0]), 'screenshots': app_details['screenshots'], 'description': app_details['description'], 'store_url': app_details['url'], 'rating': f"{app_details.get('score', 0):.1f}", 'downloads': format_downloads(app_details.get('minInstalls', 0)), 'video_url': app_details.get('video', '').replace('watch?v=', 'embed/'), 'primary_color': primary_color, 'secondary_color': secondary_color
+            'lang': language,
+            'title': app_details['title'],
+            'developer': app_details['developer'],
+            'icon_url': app_details['icon'],
+            'cover_image': app_details.get('cover', app_details['screenshots'][0]),
+            'screenshots': app_details['screenshots'],
+            'description': app_details['description'],
+            'store_url': app_details['url'],
+            'rating': f"{app_details.get('score', 0):.1f}",
+            'downloads': format_downloads(app_details.get('minInstalls', 0)),
+            'video_url': app_details.get('video', '').replace('watch?v=', 'embed/'),
+            'primary_color': primary_color,
+            'secondary_color': secondary_color,
+            'page_styles': css_styles
         }
 
         logging.info("Начинаю рендеринг HTML-шаблона...")
@@ -73,12 +92,10 @@ def generate_landing():
         return html_output, 200, {'Content-Type': 'text/html; charset=utf-8'}
 
     except Exception as e:
-        # --- ДОБАВЛЕНО: логируем полную ошибку перед отправкой ответа ---
         logging.error(f"Произошла критическая ошибка при обработке {package_name}:", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
-# Этот код нужно добавить в конец файла app.py
-
+# 6. Тестовый маршрут для проверки работоспособности сервера
 @app.route('/health', methods=['GET'])
 def health_check():
     logging.info(">>> Health check endpoint was called! Server is responding.")
