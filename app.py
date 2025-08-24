@@ -3,7 +3,8 @@ import json
 import logging
 import hashlib
 import requests
-from flask import Flask, request, jsonify, send_from_directory, abort, send_file
+from flask import Flask, request, jsonify, send_from_directory, abort, send_file, Response
+from flask_cors import CORS
 from google_play_scraper import app as play_scraper
 from PIL import Image
 from colorthief import ColorThief
@@ -24,6 +25,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+CORS(app)  # Включаем CORS для всех routes
 
 # Конфигурация
 BASE_URL = os.environ.get('BASE_URL', 'http://localhost:8080')
