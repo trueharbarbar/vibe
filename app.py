@@ -323,6 +323,24 @@ def generate_simple_html(app_data, landing_id):
 </html>"""
     return html
 
+@app.route('/', methods=['GET'])
+def index():
+    """Главная страница для проверки"""
+    return jsonify({
+        'status': 'API is working!',
+        'endpoints': {
+            'POST /generate-landing': 'Generate landing page',
+            'GET /health': 'Health check',
+            'GET /config': 'Get configuration',
+            'GET /test': 'Test endpoint'
+        }
+    }), 200
+
+@app.route('/test', methods=['GET'])
+def test():
+    """Простой тест"""
+    return "API is working! Gunicorn is running!", 200
+
 @app.route('/generate-landing', methods=['POST'])
 def generate_landing():
     """API endpoint для генерации лендинга"""
