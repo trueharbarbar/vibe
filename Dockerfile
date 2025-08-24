@@ -5,7 +5,6 @@ FROM php:8.1-apache
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
-    python3-venv \
     gcc \
     supervisor \
     && rm -rf /var/lib/apt/lists/*
@@ -16,9 +15,9 @@ RUN a2enmod rewrite proxy proxy_http
 # Установка рабочей директории
 WORKDIR /app
 
-# Копирование и установка Python зависимостей
+# Копирование и установка Python зависимостей с флагом --break-system-packages
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
 # Копирование кода приложения
 COPY app.py .
