@@ -15,11 +15,13 @@ import random
 import zipfile
 from urllib.parse import urlparse
 import colorsys
+import traceback
+import shutil
 
 # Настройка логирования
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
@@ -39,25 +41,33 @@ for directory in [LANDINGS_DIR, IMAGES_DIR, ARCHIVES_DIR, LEGAL_DIR]:
 
 def format_installs(installs):
     """Форматирование числа установок в человекочитаемый вид"""
-    if installs >= 1_000_000_000:
-        return f"{installs / 1_000_000_000:.0f}B+"
-    elif installs >= 1_000_000:
-        return f"{installs / 1_000_000:.0f}M+"
-    elif installs >= 1_000:
-        return f"{installs / 1_000:.0f}K+"
-    else:
-        return str(installs)
+    try:
+        if installs >= 1_000_000_000:
+            return f"{installs / 1_000_000_000:.0f}B+"
+        elif installs >= 1_000_000:
+            return f"{installs / 1_000_000:.0f}M+"
+        elif installs >= 1_000:
+            return f"{installs / 1_000:.0f}K+"
+        else:
+            return str(installs)
+    except Exception as e:
+        logger.error(f"Error formatting installs: {e}")
+        return "0+"
 
 def get_youtube_embed_url(video_url):
     """Преобразование YouTube URL в embed формат"""
-    if not video_url:
+    try:
+        if not video_url:
+            return None
+        
+        video_id_match = re.search(r'(?:v=|\/)([0-9A-Za-z_-]{11})', video_url)
+        if video_id_match:
+            video_id = video_id_match.group(1)
+            return f"https://www.youtube.com/embed/{video_id}"
         return None
-    
-    video_id_match = re.search(r'(?:v=|\/)([0-9A-Za-z_-]{11})', video_url)
-    if video_id_match:
-        video_id = video_id_match.group(1)
-        return f"https://www.youtube.com/embed/{video_id}"
-    return None
+    except Exception as e:
+        logger.error(f"Error converting YouTube URL: {e}")
+        return None
 
 def download_image(url, save_path):
     """Скачивание и сохранение изображения"""
@@ -82,23 +92,27 @@ def download_image(url, save_path):
 
 def vary_color(hex_color, variation=0.15):
     """Варьирование цвета для создания уникальности"""
-    # Конвертируем hex в RGB
-    hex_color = hex_color.lstrip('#')
-    r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-    
-    # Конвертируем в HSV
-    h, s, v = colorsys.rgb_to_hsv(r/255, g/255, b/255)
-    
-    # Варьируем оттенок, насыщенность и яркость
-    h = (h + random.uniform(-variation, variation)) % 1
-    s = max(0, min(1, s + random.uniform(-variation/2, variation/2)))
-    v = max(0.3, min(1, v + random.uniform(-variation/2, variation/2)))
-    
-    # Обратно в RGB
-    r, g, b = colorsys.hsv_to_rgb(h, s, v)
-    
-    # Обратно в hex
-    return '#{:02x}{:02x}{:02x}'.format(int(r*255), int(g*255), int(b*255))
+    try:
+        # Конвертируем hex в RGB
+        hex_color = hex_color.lstrip('#')
+        r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        
+        # Конвертируем в HSV
+        h, s, v = colorsys.rgb_to_hsv(r/255, g/255, b/255)
+        
+        # Варьируем оттенок, насыщенность и яркость
+        h = (h + random.uniform(-variation, variation)) % 1
+        s = max(0, min(1, s + random.uniform(-variation/2, variation/2)))
+        v = max(0.3, min(1, v + random.uniform(-variation/2, variation/2)))
+        
+        # Обратно в RGB
+        r, g, b = colorsys.hsv_to_rgb(h, s, v)
+        
+        # Обратно в hex
+        return '#{:02x}{:02x}{:02x}'.format(int(r*255), int(g*255), int(b*255))
+    except Exception as e:
+        logger.error(f"Error varying color: {e}")
+        return hex_color
 
 def extract_dominant_colors(image_path, num_colors=3):
     """Извлечение доминирующих цветов из изображения"""
@@ -109,7 +123,6 @@ def extract_dominant_colors(image_path, num_colors=3):
         colors = []
         for rgb in palette[:num_colors]:
             hex_color = '#{:02x}{:02x}{:02x}'.format(rgb[0], rgb[1], rgb[2])
-            # Добавляем вариацию к извлеченным цветам
             colors.append(vary_color(hex_color, 0.1))
         
         # Заполняем недостающие цвета дефолтными с вариацией
@@ -120,66 +133,98 @@ def extract_dominant_colors(image_path, num_colors=3):
         return colors
     except Exception as e:
         logger.error(f"Failed to extract colors: {str(e)}")
-        # Возвращаем варьированные дефолтные цвета
         return [vary_color(c) for c in ['#4285f4', '#34a853', '#fbbc04']]
 
 def generate_landing_id(package_name, language):
     """Генерация уникального ID для лендинга"""
-    # Добавляем случайную компоненту для уникальности
     content = f"{package_name}_{language}_{datetime.now().isoformat()}_{random.randint(1000, 9999)}"
     return hashlib.md5(content.encode()).hexdigest()[:12]
 
 def get_domain_from_url(url):
     """Извлечение домена из URL"""
-    parsed = urlparse(url)
-    return parsed.netloc or 'localhost'
+    try:
+        parsed = urlparse(url)
+        return parsed.netloc or 'localhost'
+    except:
+        return 'localhost'
 
 def generate_randomization_params():
     """Генерация параметров для рандомизации дизайна"""
-    params = {
-        # Layouts - различные варианты расположения элементов
-        'layout_style': random.choice(['classic', 'modern', 'minimal', 'bold', 'elegant']),
-        'hero_layout': random.choice(['left-aligned', 'center-aligned', 'right-aligned']),
-        'screenshot_layout': random.choice(['grid', 'carousel', 'masonry', 'staggered']),
+    try:
+        params = {
+            # Layouts
+            'layout_style': random.choice(['classic', 'modern', 'minimal', 'bold', 'elegant']),
+            'hero_layout': random.choice(['left-aligned', 'center-aligned', 'right-aligned']),
+            'screenshot_layout': random.choice(['grid', 'carousel', 'masonry', 'staggered']),
+            
+            # Typography
+            'font_family': random.choice([
+                '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif',
+                '"SF Pro Display", -apple-system, BlinkMacSystemFont, sans-serif',
+                'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
+                '"Google Sans", Roboto, Arial, sans-serif',
+                'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'
+            ]),
+            'heading_weight': random.choice(['600', '700', '800', '900']),
+            'title_size': random.uniform(2.2, 3.0),
+            
+            # Spacing and sizing
+            'container_padding': random.randint(20, 40),
+            'section_spacing': random.randint(30, 50),
+            'border_radius': random.randint(10, 25),
+            'button_radius': random.choice(['50px', '15px', '25px', '10px']),
+            
+            # Visual effects
+            'shadow_intensity': random.uniform(0.05, 0.2),
+            'gradient_angle': random.randint(90, 180),
+            'gradient_stops': random.choice(['0%, 100%', '0%, 50%, 100%', '20%, 80%']),
+            'animation_speed': random.uniform(0.2, 0.5),
+            
+            # Color variations
+            'use_gradient_bg': random.choice([True, False]),
+            'dark_mode': random.choice([False, False, False, True]),
+            'accent_usage': random.choice(['subtle', 'moderate', 'bold']),
+            
+            # Component variations
+            'stats_style': random.choice(['inline', 'cards', 'badges']),
+            'button_style': random.choice(['solid', 'gradient', 'outline-glow']),
+            'description_style': random.choice(['card', 'transparent', 'bordered']),
+            
+            # Order variations
+            'sections_order': random.sample(['description', 'video', 'screenshots'], 3)
+        }
         
-        # Typography variations
-        'font_family': random.choice([
-            '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif',
-            '"SF Pro Display", -apple-system, BlinkMacSystemFont, sans-serif',
-            'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
-            '"Google Sans", Roboto, Arial, sans-serif',
-            'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'
-        ]),
-        'heading_weight': random.choice(['600', '700', '800', '900']),
-        'title_size': random.uniform(2.2, 3.0),
+        # Добавляем random для Jinja2
+        params['random'] = random
         
-        # Spacing and sizing
-        'container_padding': random.randint(20, 40),
-        'section_spacing': random.randint(30, 50),
-        'border_radius': random.randint(10, 25),
-        'button_radius': random.choice(['50px', '15px', '25px', '10px']),
-        
-        # Visual effects
-        'shadow_intensity': random.uniform(0.05, 0.2),
-        'gradient_angle': random.randint(90, 180),
-        'gradient_stops': random.choice(['0%, 100%', '0%, 50%, 100%', '20%, 80%']),
-        'animation_speed': random.uniform(0.2, 0.5),
-        
-        # Color variations
-        'use_gradient_bg': random.choice([True, False]),
-        'dark_mode': random.choice([False, False, False, True]),  # 25% chance for dark mode
-        'accent_usage': random.choice(['subtle', 'moderate', 'bold']),
-        
-        # Component variations
-        'stats_style': random.choice(['inline', 'cards', 'badges']),
-        'button_style': random.choice(['solid', 'gradient', 'outline-glow']),
-        'description_style': random.choice(['card', 'transparent', 'bordered']),
-        
-        # Order variations
-        'sections_order': random.sample(['description', 'video', 'screenshots'], 3)
-    }
-    
-    return params
+        return params
+    except Exception as e:
+        logger.error(f"Error generating randomization params: {e}")
+        # Возвращаем дефолтные параметры
+        return {
+            'layout_style': 'classic',
+            'hero_layout': 'left-aligned',
+            'screenshot_layout': 'grid',
+            'font_family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            'heading_weight': '700',
+            'title_size': 2.5,
+            'container_padding': 30,
+            'section_spacing': 40,
+            'border_radius': 15,
+            'button_radius': '50px',
+            'shadow_intensity': 0.1,
+            'gradient_angle': 135,
+            'gradient_stops': '0%, 100%',
+            'animation_speed': 0.3,
+            'use_gradient_bg': False,
+            'dark_mode': False,
+            'accent_usage': 'moderate',
+            'stats_style': 'inline',
+            'button_style': 'gradient',
+            'description_style': 'card',
+            'sections_order': ['description', 'video', 'screenshots'],
+            'random': random
+        }
 
 def process_app_data(package_name, language):
     """Получение и обработка данных приложения из Google Play"""
@@ -194,6 +239,7 @@ def process_app_data(package_name, language):
         )
         
         if not app_data:
+            logger.error(f"No data received from Google Play for {package_name}")
             return None
         
         # Создаем директорию для изображений приложения
@@ -209,29 +255,25 @@ def process_app_data(package_name, language):
             'installs': format_installs(app_data.get('minInstalls', 0)),
             'package_name': package_name,
             'language': language,
-            'colors': ['#4285f4', '#34a853', '#fbbc04']  # Дефолтные цвета
+            'colors': ['#4285f4', '#34a853', '#fbbc04'],  # Дефолтные цвета
+            'icon': None,
+            'cover': None,
+            'screenshots': [],
+            'video': None
         }
         
         # Скачиваем иконку
         if app_data.get('icon'):
             icon_path = os.path.join(app_images_dir, 'icon.png')
             if download_image(app_data['icon'], icon_path):
-                processed_data['icon'] = f"/static/images/{package_name}/icon.png"
+                processed_data['icon'] = f"images/icon.png"  # Относительный путь
                 processed_data['colors'] = extract_dominant_colors(icon_path)
-            else:
-                processed_data['icon'] = None
-        else:
-            processed_data['icon'] = None
         
         # Скачиваем обложку
         if app_data.get('headerImage'):
             cover_path = os.path.join(app_images_dir, 'cover.jpg')
             if download_image(app_data['headerImage'], cover_path):
-                processed_data['cover'] = f"/static/images/{package_name}/cover.jpg"
-            else:
-                processed_data['cover'] = None
-        else:
-            processed_data['cover'] = None
+                processed_data['cover'] = f"images/cover.jpg"  # Относительный путь
         
         # Скачиваем скриншоты
         screenshots = []
@@ -239,38 +281,36 @@ def process_app_data(package_name, language):
             for i, screenshot_url in enumerate(app_data['screenshots'][:6]):
                 screenshot_path = os.path.join(app_images_dir, f'screenshot_{i}.jpg')
                 if download_image(screenshot_url, screenshot_path):
-                    screenshots.append(f"/static/images/{package_name}/screenshot_{i}.jpg")
+                    screenshots.append(f"images/screenshot_{i}.jpg")  # Относительный путь
         processed_data['screenshots'] = screenshots
         
         # Обрабатываем видео
         if app_data.get('video'):
             processed_data['video'] = get_youtube_embed_url(app_data['video'])
-        else:
-            processed_data['video'] = None
         
         logger.info(f"Successfully processed app data for {package_name}")
         return processed_data
         
     except Exception as e:
-        logger.error(f"Failed to process app data: {str(e)}")
+        logger.error(f"Failed to process app data: {str(e)}\n{traceback.format_exc()}")
         return None
 
 def generate_html(app_data):
     """Генерация HTML страницы лендинга с рандомизацией"""
-    
-    # Генерируем параметры рандомизации
-    r = generate_randomization_params()
-    
-    # Получаем домен из BASE_URL
-    domain = get_domain_from_url(BASE_URL)
-    
-    # Добавляем domain в данные
-    app_data['domain'] = domain
-    
-    # Объединяем все параметры
-    template_data = {**app_data, **r}
-    
-    template = Template('''<!DOCTYPE html>
+    try:
+        # Генерируем параметры рандомизации
+        r = generate_randomization_params()
+        
+        # Получаем домен из BASE_URL
+        domain = get_domain_from_url(BASE_URL)
+        
+        # Добавляем domain в данные
+        app_data['domain'] = domain
+        
+        # Объединяем все параметры
+        template_data = {**app_data, **r}
+        
+        template = Template('''<!DOCTYPE html>
 <html lang="{{ language }}">
 <head>
     <meta charset="UTF-8">
@@ -342,15 +382,15 @@ def generate_html(app_data):
         }
         
         .app-icon {
-            width: {{ 100 + random.randint(0, 40) }}px;
-            height: {{ 100 + random.randint(0, 40) }}px;
-            border-radius: {{ random.choice([20, 25, 30, 50]) }}%;
+            width: 120px;
+            height: 120px;
+            border-radius: 25px;
             box-shadow: 0 10px 30px rgba(0,0,0,calc(var(--shadow-intensity) * 1.5));
             transition: transform var(--animation-speed);
         }
         
         .app-icon:hover {
-            transform: scale(1.05) rotate({{ random.choice([-2, 0, 2]) }}deg);
+            transform: scale(1.05);
         }
         
         .app-info h1 {
@@ -762,8 +802,8 @@ def generate_html(app_data):
     <footer>
         <div class="footer-content">
             <div class="footer-links">
-                <a href="/legal/privacy/{{ package_name }}.html">Privacy Policy</a>
-                <a href="/legal/terms/{{ package_name }}.html">Terms of Service</a>
+                <a href="privacy.html">Privacy Policy</a>
+                <a href="terms.html">Terms of Service</a>
                 <a href="mailto:mail@{{ domain }}">Contact Us</a>
             </div>
             <div class="footer-copyright">
@@ -774,8 +814,11 @@ def generate_html(app_data):
     </footer>
 </body>
 </html>''')
-    
-    return template.render(**template_data)
+        
+        return template.render(**template_data)
+    except Exception as e:
+        logger.error(f"Error generating HTML: {str(e)}\n{traceback.format_exc()}")
+        raise
 
 def generate_privacy_policy(app_title, domain):
     """Генерация политики конфиденциальности"""
@@ -826,43 +869,19 @@ def generate_privacy_policy(app_title, domain):
         <p class="date">Last updated: {datetime.now().strftime('%B %d, %Y')}</p>
         
         <h2>Introduction</h2>
-        <p>Welcome to {app_title}. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our mobile application. Please read this privacy policy carefully.</p>
+        <p>Welcome to {app_title}. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our mobile application.</p>
         
         <h2>Information We Collect</h2>
-        <p>We may collect information about you in a variety of ways. The information we may collect via the Application includes:</p>
+        <p>We may collect information about you in a variety of ways:</p>
         <ul>
-            <li><strong>Personal Data:</strong> Demographic and other personally identifiable information that you voluntarily give to us when choosing to participate in various activities related to the Application.</li>
-            <li><strong>Derivative Data:</strong> Information our servers automatically collect when you access the Application, such as your native actions that are integral to the Application.</li>
-            <li><strong>Mobile Device Access:</strong> We may request access or permission to certain features from your mobile device.</li>
+            <li><strong>Personal Data:</strong> Information that you voluntarily provide to us</li>
+            <li><strong>Usage Data:</strong> Information our servers automatically collect</li>
+            <li><strong>Device Data:</strong> Information about your mobile device</li>
         </ul>
-        
-        <h2>Use of Your Information</h2>
-        <p>We may use information collected about you via the Application to:</p>
-        <ul>
-            <li>Create and manage your account</li>
-            <li>Email you regarding your account or order</li>
-            <li>Fulfill and manage purchases, orders, payments, and other transactions</li>
-            <li>Generate a personal profile about you</li>
-            <li>Increase the efficiency and operation of the Application</li>
-            <li>Monitor and analyze usage and trends</li>
-            <li>Notify you of updates to the Application</li>
-        </ul>
-        
-        <h2>Disclosure of Your Information</h2>
-        <p>We may share information we have collected about you in certain situations:</p>
-        <ul>
-            <li><strong>By Law or to Protect Rights:</strong> If we believe the release of information is necessary to respond to legal process</li>
-            <li><strong>Third-Party Service Providers:</strong> We may share your information with third parties that perform services for us</li>
-            <li><strong>Marketing Communications:</strong> With your consent, we may share your information with third parties for marketing purposes</li>
-        </ul>
-        
-        <h2>Security of Your Information</h2>
-        <p>We use administrative, technical, and physical security measures to help protect your personal information. While we have taken reasonable steps to secure the personal information you provide to us, please be aware that despite our efforts, no security measures are perfect or impenetrable.</p>
         
         <h2>Contact Us</h2>
-        <p>If you have questions or comments about this Privacy Policy, please contact us at:</p>
+        <p>If you have questions about this Privacy Policy, please contact us at:</p>
         <p>Email: <a href="mailto:privacy@{domain}">privacy@{domain}</a></p>
-        <p>Website: <a href="http://{domain}">{domain}</a></p>
     </div>
 </body>
 </html>'''
@@ -900,61 +919,209 @@ def generate_terms_of_service(app_title, domain):
             color: #34495e;
             margin-top: 30px;
         }}
-        .date {{
-            color: #7f8c8d;
-            font-style: italic;
-        }}
-        a {{
-            color: #3498db;
-            text-decoration: none;
-        }}
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Terms of Service</h1>
-        <p class="date">Effective Date: {datetime.now().strftime('%B %d, %Y')}</p>
+        <p>Effective Date: {datetime.now().strftime('%B %d, %Y')}</p>
         
         <h2>Agreement to Terms</h2>
-        <p>These Terms of Service constitute a legally binding agreement made between you and {domain} concerning your access to and use of the {app_title} application.</p>
-        
-        <h2>Intellectual Property Rights</h2>
-        <p>Unless otherwise indicated, the Application is our proprietary property and all source code, databases, functionality, software, designs, audio, video, text, photographs, and graphics on the Application are owned or controlled by us.</p>
-        
-        <h2>User Representations</h2>
-        <p>By using the Application, you represent and warrant that:</p>
-        <ul>
-            <li>You have the legal capacity and you agree to comply with these Terms of Service</li>
-            <li>You are not under the age of 13</li>
-            <li>You will not access the Application through automated or non-human means</li>
-            <li>You will not use the Application for any illegal or unauthorized purpose</li>
-        </ul>
-        
-        <h2>Prohibited Activities</h2>
-        <p>You may not access or use the Application for any purpose other than that for which we make the Application available. The Application may not be used in connection with any commercial endeavors except those that are specifically endorsed or approved by us.</p>
-        
-        <h2>Contribution License</h2>
-        <p>You and the Application agree that we may access, store, process, and use any information and personal data that you provide following the terms of the Privacy Policy and your choices.</p>
-        
-        <h2>Privacy Policy</h2>
-        <p>We care about data privacy and security. Please review our <a href="/legal/privacy/{domain}.html">Privacy Policy</a>.</p>
-        
-        <h2>Termination</h2>
-        <p>These Terms of Service remain in full force and effect while you use the Application. We reserve the right to deny access to and use of the Application.</p>
-        
-        <h2>Disclaimer</h2>
-        <p>THE APPLICATION IS PROVIDED ON AN AS-IS AND AS-AVAILABLE BASIS. YOU AGREE THAT YOUR USE OF THE APPLICATION WILL BE AT YOUR SOLE RISK.</p>
-        
-        <h2>Limitation of Liability</h2>
-        <p>IN NO EVENT WILL WE OR OUR DIRECTORS, EMPLOYEES, OR AGENTS BE LIABLE TO YOU OR ANY THIRD PARTY FOR ANY DIRECT, INDIRECT, CONSEQUENTIAL, EXEMPLARY, INCIDENTAL, SPECIAL, OR PUNITIVE DAMAGES.</p>
-        
-        <h2>Governing Law</h2>
-        <p>These Terms shall be governed by and defined following the laws of the country where {domain} is registered.</p>
+        <p>These Terms of Service constitute a legally binding agreement made between you and {domain}.</p>
         
         <h2>Contact Information</h2>
-        <p>If you have any questions about these Terms of Service, please contact us at:</p>
         <p>Email: <a href="mailto:legal@{domain}">legal@{domain}</a></p>
-        <p>Website: <a href="http://{domain}">{domain}</a></p>
     </div>
 </body>
 </html>'''
+
+def create_landing_archive(landing_dir, landing_id):
+    """Создание ZIP архива с лендингом и всеми ресурсами"""
+    try:
+        archive_path = os.path.join(ARCHIVES_DIR, f"{landing_id}.zip")
+        
+        with zipfile.ZipFile(archive_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            # Добавляем все файлы из директории лендинга
+            for root, dirs, files in os.walk(landing_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, landing_dir)
+                    zipf.write(file_path, arcname)
+        
+        return archive_path
+    except Exception as e:
+        logger.error(f"Failed to create archive: {str(e)}")
+        return None
+
+@app.route('/generate-landing', methods=['POST'])
+def generate_landing():
+    """API endpoint для генерации лендинга"""
+    try:
+        # Получаем параметры из запроса
+        data = request.get_json()
+        
+        if not data or 'packageName' not in data:
+            error_msg = "Missing packageName in request"
+            logger.error(error_msg)
+            return jsonify({'error': error_msg, 'details': 'packageName is required in request body'}), 400
+        
+        package_name = data['packageName']
+        language = data.get('language', 'en')
+        
+        logger.info(f"Received request for {package_name} in {language}")
+        
+        # Получаем и обрабатываем данные приложения
+        app_data = process_app_data(package_name, language)
+        
+        if not app_data:
+            error_msg = f"App not found: {package_name}"
+            logger.error(error_msg)
+            return jsonify({'error': 'App not found', 'details': f'Could not find app with packageName: {package_name}'}), 404
+        
+        # Генерируем уникальный ID для лендинга
+        landing_id = generate_landing_id(package_name, language)
+        
+        # Создаем директорию для этого лендинга (автономная структура)
+        landing_dir = os.path.join(LANDINGS_DIR, landing_id)
+        landing_images_dir = os.path.join(landing_dir, 'images')
+        os.makedirs(landing_images_dir, exist_ok=True)
+        
+        # Копируем изображения в директорию лендинга
+        source_images_dir = os.path.join(IMAGES_DIR, package_name)
+        if os.path.exists(source_images_dir):
+            for filename in os.listdir(source_images_dir):
+                src = os.path.join(source_images_dir, filename)
+                dst = os.path.join(landing_images_dir, filename)
+                if os.path.isfile(src):
+                    shutil.copy2(src, dst)
+                    logger.info(f"Copied image {filename} to landing directory")
+        
+        # Генерируем HTML
+        html_content = generate_html(app_data)
+        
+        # Сохраняем HTML файл
+        landing_html_path = os.path.join(landing_dir, 'index.html')
+        with open(landing_html_path, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        
+        # Генерируем правовые документы
+        domain = get_domain_from_url(BASE_URL)
+        
+        privacy_content = generate_privacy_policy(app_data['title'], domain)
+        terms_content = generate_terms_of_service(app_data['title'], domain)
+        
+        with open(os.path.join(landing_dir, 'privacy.html'), 'w', encoding='utf-8') as f:
+            f.write(privacy_content)
+        
+        with open(os.path.join(landing_dir, 'terms.html'), 'w', encoding='utf-8') as f:
+            f.write(terms_content)
+        
+        # Создаем ZIP архив
+        archive_path = create_landing_archive(landing_dir, landing_id)
+        
+        logger.info(f"Landing generated successfully: {landing_id}")
+        
+        # Формируем URLs
+        landing_url = f"{BASE_URL}/landing/{landing_id}.html"
+        archive_url = f"{BASE_URL}/download/{landing_id}.zip" if archive_path else None
+        
+        # Возвращаем ссылки на готовый лендинг и архив
+        response_data = {
+            'success': True,
+            'landing_url': landing_url,
+            'landing_id': landing_id,
+            'package_name': package_name,
+            'language': language
+        }
+        
+        if archive_url:
+            response_data['archive_url'] = archive_url
+        
+        return jsonify(response_data), 200
+        
+    except Exception as e:
+        error_msg = f"Internal error: {str(e)}"
+        error_details = traceback.format_exc()
+        logger.error(f"{error_msg}\n{error_details}")
+        return jsonify({
+            'error': 'An internal error occurred',
+            'details': error_msg,
+            'traceback': error_details if app.debug else None
+        }), 500
+
+@app.route('/landing/<path:filename>')
+def serve_landing(filename):
+    """Отдача готового лендинга"""
+    try:
+        # Поддержка старого формата (прямые файлы)
+        if filename.endswith('.html'):
+            # Проверяем прямой файл
+            direct_path = os.path.join(LANDINGS_DIR, filename)
+            if os.path.exists(direct_path):
+                return send_from_directory(LANDINGS_DIR, filename)
+            
+            # Проверяем в директории (новый формат)
+            landing_id = filename.replace('.html', '')
+            landing_dir = os.path.join(LANDINGS_DIR, landing_id)
+            if os.path.exists(landing_dir):
+                return send_from_directory(landing_dir, 'index.html')
+        
+        # Для файлов без расширения - ищем директорию
+        landing_dir = os.path.join(LANDINGS_DIR, filename)
+        if os.path.exists(landing_dir):
+            return send_from_directory(landing_dir, 'index.html')
+            
+        abort(404)
+    except Exception as e:
+        logger.error(f"Error serving landing {filename}: {str(e)}")
+        abort(404)
+
+@app.route('/landing/<landing_id>/<path:filepath>')
+def serve_landing_resource(landing_id, filepath):
+    """Отдача ресурсов лендинга (изображения, css, js)"""
+    try:
+        landing_dir = os.path.join(LANDINGS_DIR, landing_id)
+        return send_from_directory(landing_dir, filepath)
+    except:
+        abort(404)
+
+@app.route('/static/images/<path:filepath>')
+def serve_image(filepath):
+    """Отдача изображений (для обратной совместимости)"""
+    try:
+        return send_from_directory(IMAGES_DIR, filepath)
+    except:
+        abort(404)
+
+@app.route('/download/<filename>')
+def download_archive(filename):
+    """Скачивание ZIP архива с лендингом"""
+    try:
+        archive_path = os.path.join(ARCHIVES_DIR, filename)
+        if os.path.exists(archive_path):
+            return send_file(
+                archive_path,
+                mimetype='application/zip',
+                as_attachment=True,
+                download_name=filename
+            )
+        else:
+            abort(404)
+    except:
+        abort(404)
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    return jsonify({'status': 'healthy'}), 200
+
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({'error': 'Not found', 'details': 'The requested resource was not found'}), 404
+
+@app.errorhandler(500)
+def internal_error(e):
+    return jsonify({'error': 'Internal server error', 'details': str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080, debug=True)
